@@ -356,6 +356,10 @@ export class UIRenderer {
     tabs.push({ id: 'system', label: 'System Records', icon: '&gt;_' });
     contents['system'] = this.renderSystemRecords(caseRecord);
 
+    // Employee Manual tab
+    tabs.push({ id: 'manual', label: 'Employee Manual', icon: '&#128214;' });
+    contents.manual = this.renderEmployeeManual(caseRecord);
+
     for (const docType of requiredDocs) {
       const doc = documents[docType];
       const docName = this.game.caseGenerator.formatDocName(docType);
@@ -442,15 +446,16 @@ export class UIRenderer {
     }
 
     const docName = this.game.caseGenerator.formatDocName(docType);
-    let statusClass = 'valid';
-    let statusText = 'VALID';
-    if (doc.forged && this.game.developmentMode) {
+    const showHints = this.game.developmentMode;
+    let statusClass = showHints ? 'valid' : 'received';
+    let statusText = showHints ? 'VALID' : 'ON FILE';
+    if (showHints && doc.forged) {
       statusClass = 'forged';
       statusText = 'SUSPICIOUS';
-    } else if (doc.expired) {
+    } else if (showHints && doc.expired) {
       statusClass = 'expired';
       statusText = 'EXPIRED';
-    } else if (doc.errors.length > 0) {
+    } else if (showHints && doc.errors.length > 0) {
       statusClass = 'issue';
       statusText = 'ISSUE FOUND';
     }
@@ -463,10 +468,10 @@ export class UIRenderer {
         (e === 'altered_date' && key === 'dateIssued') ||
         (key === 'expirationDate' && doc.expired)
       );
-      return `<div class="doc-field ${isError ? 'field-error' : ''}">
+      return `<div class="doc-field ${isError && this.game.developmentMode ? 'field-error' : ''}">
         <span class="field-label">${label}:</span>
         <span class="field-value">${value}</span>
-        ${isError ? '<span class="error-indicator">&#9888;</span>' : ''}
+        ${isError && this.game.developmentMode ? '<span class="error-indicator">&#9888;</span>' : ''}
       </div>`;
     }).join('');
 
@@ -518,6 +523,59 @@ export class UIRenderer {
           <p>Action required: confirm whether this document is mandatory before approval.</p>
           <p class="doc-subtle">No digital copy is attached to this case file.</p>
         </div>
+      </div>
+    `;
+  }
+
+  renderEmployeeManual(caseRecord) {
+    const dept = this.game.player.department;
+    const deptConfig = this.game.catalogs.departments[dept];
+    const requestType = caseRecord.requestType;
+    const currentRequired = deptConfig.requiredDocsByRequest[requestType] || [];
+
+    const requestRows = Object.entries(deptConfig.requiredDocsByRequest).map(([type, docs]) => {
+      const docsText = docs.map(d => this.game.caseGenerator.formatDocName(d)).join(', ');
+      return `
+        <tr class="${type === requestType ? 'active-request' : ''}">
+          <td>${this.game.caseGenerator.formatRequestType(type)}</td>
+          <td>${docsText || 'No documents required'}</td>
+          <td>$${deptConfig.fees[type] ?? 0}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const blockingRules = `
+      <ul>
+        <li><strong>Deny</strong> if any required document is missing.</li>
+        <li><strong>Deny</strong> if a required document is expired.</li>
+        <li><strong>Deny</strong> if authenticity cannot be verified (suspected fraud).</li>
+        <li><strong>Deny</strong> when blocking conditions are present (e.g. unpaid tickets threshold, suspension, impound hold, required vision test).</li>
+        <li><strong>Approve</strong> only when all required documents are present/valid and no blocking condition exists.</li>
+      </ul>
+    `;
+
+    const currentDocs = currentRequired.length > 0
+      ? `<p><strong>Current case requires:</strong> ${currentRequired.map(d => this.game.caseGenerator.formatDocName(d)).join(', ')}.</p>`
+      : '<p><strong>Current case requires:</strong> No supporting documents.</p>';
+
+    return `
+      <div class="system-records employee-manual">
+        <h4>Employee Manual — ${dept}</h4>
+        ${currentDocs}
+        <p><strong>Current request:</strong> ${this.game.caseGenerator.formatRequestType(requestType)}</p>
+
+        <h5>Required documents by request type</h5>
+        <div class="manual-table-wrap">
+          <table class="manual-table">
+            <thead>
+              <tr><th>Request Type</th><th>Required Documents</th><th>Fee</th></tr>
+            </thead>
+            <tbody>${requestRows}</tbody>
+          </table>
+        </div>
+
+        <h5>Disposition rules</h5>
+        ${blockingRules}
       </div>
     `;
   }

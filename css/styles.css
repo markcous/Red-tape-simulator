@@ -696,6 +696,7 @@ body {
 .status-forged { background: #f8bbd0; color: #880e4f; }
 .status-issue { background: #fff9c4; color: #f57f17; }
 .status-review { background: #e3f2fd; color: #1565c0; }
+.status-received { background: #eceff1; color: #37474f; }
 
 .doc-fields {
   display: flex;
@@ -801,6 +802,49 @@ body {
   font-family: 'IBM Plex Mono', monospace;
   margin-bottom: 12px;
   color: var(--accent-blue);
+}
+
+.employee-manual h5 {
+  margin: 14px 0 8px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.manual-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.manual-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.manual-table th,
+.manual-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.manual-table th {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.manual-table .active-request {
+  background: rgba(76, 175, 80, 0.12);
+}
+
+.employee-manual ul {
+  margin-left: 18px;
+  display: grid;
+  gap: 6px;
 }
 
 .record-grid {
