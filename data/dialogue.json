@@ -1,0 +1,208 @@
+{
+  "greetings": {
+    "nervous": [
+      "H-hi... I'm here for, um, my {{requestType}}? Is this the right line?",
+      "Oh gosh, is this where I go? My mom said to come here for a {{requestType}}.",
+      "Sorry, first time here... I need a {{requestType}} please?"
+    ],
+    "slow": [
+      "Good morning, dear. I'm here about my {{requestType}}. Been meaning to come in for... oh, a few months now.",
+      "Hello there. My grandson told me I need to do a {{requestType}}. Something about it being expired?",
+      "Is this the window for {{requestType}}? My eyes aren't what they used to be."
+    ],
+    "evasive": [
+      "Yeah, I need a {{requestType}}. Let's make this quick, alright?",
+      "Hey, so... a buddy told me you could help me out with a {{requestType}}. No big deal.",
+      "I'm here for a {{requestType}}. Everything's in order, trust me."
+    ],
+    "confused": [
+      "Hello, please. I am needing {{requestType}}? My documents, they are... how you say... different format.",
+      "Good day. I am new to this country and I need help with {{requestType}}, if you please.",
+      "Sorry, my English is not perfect. I need {{requestType}}? I have papers from my home country."
+    ],
+    "aggressive": [
+      "Look, I've been waiting for FORTY MINUTES. I just need a simple {{requestType}}. How hard can it be?",
+      "Oh great, another window. I need a {{requestType}} and I needed it YESTERDAY.",
+      "Do NOT make me wait any longer. {{requestType}}. Now. Please."
+    ],
+    "thorough": [
+      "Good morning! I have my {{requestType}} paperwork here — all twelve copies, color-coded with index tabs.",
+      "Hello! I've prepared everything for my {{requestType}}. I also brought backup copies and a notarized letter, just in case.",
+      "I've researched the exact requirements for {{requestType}}. Here is my organized binder — Section A through F."
+    ],
+    "rushed": [
+      "Oh man, I know my {{requestType}} was due like... a while ago. Is there a late fee?",
+      "I keep meaning to do this {{requestType}} thing but stuff keeps coming up, you know?",
+      "So... how bad is it if my {{requestType}} expired three months ago? Hypothetically."
+    ],
+    "charming": [
+      "Well hello there! What a lovely office you have. I'm here for a {{requestType}} — hopefully you can work your magic!",
+      "Hey, you look like someone who really knows their stuff. I bet you can help me with this {{requestType}} in no time!",
+      "Is it just me or is the service here getting better? Must be because of great employees like you. Anyway, {{requestType}} please!"
+    ],
+    "paranoid": [
+      "Before we start — who has access to this information? I need a {{requestType}} but I don't want it in 'the system.'",
+      "I'm here for a {{requestType}}, but I want it noted that I'm doing this UNDER PROTEST.",
+      "Fine. {{requestType}}. But I'm NOT giving you my real social security number. That's how they track you."
+    ],
+    "scattered": [
+      "Hi, sorry — STOP TOUCHING THAT — I need a {{requestType}} please. Hold on, where did I put my — COME BACK HERE — sorry about that.",
+      "Oh hi! {{requestType}} please. My hands are full because someone — no, put that DOWN — sorry, what were we doing?",
+      "I think I need a... wait, which one... {{requestType}}? Yes! Sorry, I have a lot going on right now."
+    ],
+    "enthusiastic": [
+      "Hey! Back again! You might remember me — I was here last month for my vanity plates? This time I want a {{requestType}}!",
+      "GREAT news — I found an even BETTER design for my plates. Oh wait, I'm here for a {{requestType}} first. Then we talk plates.",
+      "Hello, my favorite DMV employee! {{requestType}} time! I've got all my paperwork in my special government forms folder."
+    ],
+    "entitled": [
+      "Hi, I'm a personal friend of Commissioner {{supervisorName}}. I need a {{requestType}} expedited, if you don't mind.",
+      "Look, I don't usually do this, but I know people at City Hall. {{requestType}} please, and can we skip the usual wait?",
+      "My neighbor's cousin is on the board. I'm sure we can work something out for this {{requestType}}, right?"
+    ]
+  },
+  "reactions": {
+    "approved": {
+      "happy": [
+        "Oh thank you so much! You've been wonderful!",
+        "Finally! That wasn't so bad. Thanks!",
+        "Great, exactly what I needed. Have a good day!"
+      ],
+      "neutral": [
+        "Okay, cool. Thanks.",
+        "About time. Thanks I guess.",
+        "That'll do. See you in four years."
+      ]
+    },
+    "denied": {
+      "angry": [
+        "This is UNBELIEVABLE. I want to speak to your manager!",
+        "You're kidding me. I drove all the way here for NOTHING?!",
+        "This is exactly what's wrong with this place!"
+      ],
+      "sad": [
+        "Oh... I really needed this today. What do I do now?",
+        "I understand... I'll come back with the right papers.",
+        "Well, that's disappointing. Thank you for your time."
+      ]
+    },
+    "escalated": [
+      "Finally, someone with actual authority.",
+      "I shouldn't have to go through this just for a simple request.",
+      "About time. Let's get a supervisor who can actually help."
+    ],
+    "bribeAttempt": [
+      "Look, what if I... made it worth your while? Say, $50 to move things along?",
+      "I've got a little something here that might help speed this up... *slides envelope*",
+      "Between you and me, I know how things work. Here's a little thank-you in advance.",
+      "My friend, in my country we show appreciation differently. Please, take this gift."
+    ],
+    "waitingImpatiently": [
+      "*taps foot loudly*",
+      "*sighs dramatically*",
+      "*checks phone for the tenth time*",
+      "Is there a faster line somewhere?",
+      "*mutters under breath about government workers*"
+    ]
+  },
+  "supervisorComments": {
+    "byTheBook": {
+      "praise": [
+        "Textbook processing. That's exactly how it should be done.",
+        "Perfect adherence to protocol. Well done.",
+        "Not a single deviation from procedure. Excellent work."
+      ],
+      "criticism": [
+        "I noticed irregularities in Case #{{caseId}}. We need to discuss protocol.",
+        "Your processing time is concerning. Accuracy comes first, but efficiency matters too.",
+        "There were {{errorCount}} policy errors today. Unacceptable."
+      ]
+    },
+    "politician": {
+      "praise": [
+        "The customers love you! Our satisfaction scores are up!",
+        "You really know how to keep people happy. The mayor's office will be pleased.",
+        "Great customer relations today. That's what keeps our funding flowing."
+      ],
+      "criticism": [
+        "We got {{complaintCount}} complaints today. That's bad for our public image.",
+        "The satisfaction numbers are down. We need people leaving here with smiles.",
+        "A citizen wrote to the newspaper about poor service. Fix this."
+      ]
+    },
+    "pragmatist": {
+      "praise": [
+        "Good balance today. Numbers look solid across the board.",
+        "You handled that tricky case well. Practical thinking.",
+        "Efficient and clean. That's what I like to see."
+      ],
+      "criticism": [
+        "You spent too long on that one case. Sometimes good enough is good enough.",
+        "I'll overlook one mistake, but let's keep it clean from here.",
+        "We need to find a better workflow. Today was messier than it should've been."
+      ]
+    },
+    "corrupt": {
+      "praise": [
+        "Nice work keeping things... flexible today. That's how you move up.",
+        "I like how you handled that. Very... creative interpretation of policy.",
+        "You're learning how things really work around here. Good."
+      ],
+      "criticism": [
+        "You turned down a perfectly good opportunity today. Don't be naive.",
+        "Being a boy scout doesn't pay the bills. Think about it.",
+        "That case could've gone differently. Just saying."
+      ]
+    }
+  },
+  "chaosEvents": [
+    {
+      "id": "printer_jam",
+      "name": "Printer Jam",
+      "description": "The receipt printer has jammed again. Processing will be slower until it's fixed.",
+      "effect": "processingTimeIncrease",
+      "magnitude": 0.25,
+      "duration": 3
+    },
+    {
+      "id": "system_crash",
+      "name": "Computer System Crash",
+      "description": "The DMV database is down! You'll have to work from paper records temporarily.",
+      "effect": "accuracyDecrease",
+      "magnitude": 0.15,
+      "duration": 2
+    },
+    {
+      "id": "fire_drill",
+      "name": "Fire Drill",
+      "description": "Everyone must evacuate the building. You'll lose one customer slot this shift.",
+      "effect": "customerLost",
+      "magnitude": 1,
+      "duration": 1
+    },
+    {
+      "id": "coffee_machine",
+      "name": "Coffee Machine Broken",
+      "description": "The coffee machine is out of order. Morale is suffering.",
+      "effect": "moraleDecrease",
+      "magnitude": 0.1,
+      "duration": 5
+    },
+    {
+      "id": "surprise_inspection",
+      "name": "Surprise Inspection",
+      "description": "An oversight inspector is watching your work! Better be extra careful.",
+      "effect": "scrutinyIncrease",
+      "magnitude": 0.5,
+      "duration": 3
+    },
+    {
+      "id": "free_donuts",
+      "name": "Someone Brought Donuts",
+      "description": "A kind citizen dropped off donuts for the staff. Customer patience is slightly improved.",
+      "effect": "patienceBoost",
+      "magnitude": 0.15,
+      "duration": 4
+    }
+  ]
+}

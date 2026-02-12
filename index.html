@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Red Tape Simulator - Quirky Bureaucracy Simulator</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128203;</text></svg>">
+</head>
+<body>
+
+  <!-- LOADING SCREEN -->
+  <div id="loading-screen">
+    <div class="loading-spinner"></div>
+    <p>Loading bureaucracy...</p>
+  </div>
+
+  <!-- MENU SCREEN -->
+  <div id="menu-screen" class="hidden">
+    <div class="menu-container">
+      <h1 class="game-title">RED TAPE<br>SIMULATOR</h1>
+      <p class="game-subtitle">A Quirky Bureaucracy Simulator</p>
+      <div class="menu-buttons">
+        <button id="start-shift-btn" class="btn btn-primary">Start First Shift</button>
+        <button id="new-game-btn" class="btn">New Game</button>
+      </div>
+      <div id="menu-stats" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- SHIFT START SCREEN -->
+  <div id="shift-start-screen" class="hidden">
+    <div style="max-width: 500px; width: 100%;">
+      <div id="shift-start-content"></div>
+      <button id="begin-shift-btn" class="btn btn-primary">Begin Shift</button>
+    </div>
+  </div>
+
+  <!-- MAIN GAME SCREEN -->
+  <div id="game-screen" class="hidden">
+    <!-- HUD -->
+    <div class="game-hud">
+      <div class="hud-left">
+        <div class="hud-item">
+          <span class="label">Time</span>
+          <span class="value" id="clock-display">8:00 AM</span>
+        </div>
+        <div class="hud-item">
+          <span class="label">Queue</span>
+          <span class="value" id="queue-counter">0/0</span>
+        </div>
+      </div>
+      <div class="hud-center">
+        <div class="hud-item">
+          <span class="label">Shift Progress</span>
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="shift-progress" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+      <div class="hud-right">
+        <div class="hud-item">
+          <span class="label">Money</span>
+          <span class="value" id="money-display">$0</span>
+        </div>
+        <div class="hud-item" id="performance-indicator">
+          <span class="label">DMV</span>
+          <span class="value">Clerk</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main game area -->
+    <div class="game-main">
+      <!-- Left: Customer -->
+      <div id="customer-panel">
+        <div id="customer-portrait"></div>
+        <div id="customer-name"></div>
+        <div id="customer-greeting"></div>
+        <div id="customer-info"></div>
+        <div id="queue-display"></div>
+      </div>
+
+      <!-- Center: Documents -->
+      <div id="document-panel">
+        <div id="document-tabs"></div>
+        <div id="document-content"></div>
+      </div>
+
+      <!-- Right: Flags + Decision -->
+      <div class="right-panel">
+        <div id="flags-panel">
+          <h3>Conditions & Flags</h3>
+        </div>
+        <div id="decision-panel">
+          <h3>Your Decision</h3>
+          <button id="approve-btn" class="btn btn-success">Approve</button>
+          <button id="deny-btn" class="btn btn-danger">Deny (Select Reason)</button>
+          <div id="deny-reasons"></div>
+          <button id="escalate-btn" class="btn btn-warning">Escalate to Supervisor</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Result Overlay -->
+    <div id="result-overlay" class="hidden">
+      <div>
+        <div id="result-content"></div>
+        <button id="next-customer-btn" class="btn btn-primary">Next Customer</button>
+      </div>
+    </div>
+
+    <!-- Bribe Overlay -->
+    <div id="bribe-overlay" class="hidden">
+      <div>
+        <div id="bribe-content"></div>
+        <div class="bribe-buttons">
+          <button id="accept-bribe-btn" class="btn btn-warning">Accept Bribe</button>
+          <button id="decline-bribe-btn" class="btn btn-success">Decline</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EVENT BANNER -->
+  <div id="event-banner" class="hidden">
+    <span id="event-text"></span>
+  </div>
+
+  <!-- REVIEW SCREEN -->
+  <div id="review-screen" class="hidden">
+    <div style="max-width: 600px; width: 100%;">
+      <div id="review-content"></div>
+      <button id="continue-btn" class="btn btn-primary">Continue</button>
+    </div>
+  </div>
+
+  <!-- NOTIFICATION AREA -->
+  <div id="notification-area"></div>
+
+  <!-- GAME SCRIPTS -->
+  <script type="module">
+    import { Game } from './js/game.js';
+    import { UIRenderer } from './js/ui/renderer.js';
+
+    const game = new Game();
+    const ui = new UIRenderer(game);
+
+    async function start() {
+      try {
+        await game.init();
+        ui.init();
+      } catch (err) {
+        console.error('Failed to initialize game:', err);
+        document.getElementById('loading-screen').innerHTML =
+          `<p style="color:#f44336">Failed to load game: ${err.message}</p>`;
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>

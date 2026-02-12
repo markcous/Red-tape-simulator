@@ -1,0 +1,110 @@
+{
+  "shift": {
+    "lengthMinutes": 480,
+    "clockSpeedMultiplier": 60,
+    "customersPerShift": [6, 8],
+    "rushHourStart": "14:00",
+    "rushHourEnd": "15:30",
+    "npcSpawnRates": {
+      "morning": 0.8,
+      "midday": 1.0,
+      "rush": 2.0,
+      "afternoon": 0.7
+    }
+  },
+  "recurrence": {
+    "minShifts": 2,
+    "maxShifts": 5,
+    "returningNpcPerShift": 0.3,
+    "maxRegularsPerShift": 2
+  },
+  "weights": {
+    "accuracy": 0.5,
+    "throughput": 0.2,
+    "customer": 0.3
+  },
+  "streak": {
+    "perCleanShift": 5,
+    "cap": 25,
+    "decayPerDirtyShift": 5
+  },
+  "penalties": {
+    "minorError": 5,
+    "majorError": 15,
+    "complaint": 10,
+    "escalationLoss": 10,
+    "timeViolation": 10,
+    "processIssue": 5,
+    "bribe": {
+      "byTheBook": 40,
+      "politician": 20,
+      "pragmatist": 15,
+      "corruptRange": [0, 10]
+    },
+    "misconduct": 60
+  },
+  "weeklyBands": {
+    "promo": 90,
+    "solid": 75,
+    "coaching": 60
+  },
+  "sentiment": {
+    "happy": 1.0,
+    "neutral": 0.6,
+    "annoyed": 0.2,
+    "angry": 0.0,
+    "insulted": -0.5
+  },
+  "reputation": {
+    "approveCorrect": { "towardPlayer": 5, "towardAgency": 3 },
+    "approveIncorrect": { "towardPlayer": 2, "towardAgency": -5 },
+    "denyCorrect": { "towardPlayer": -3, "towardAgency": 2 },
+    "denyIncorrect": { "towardPlayer": -10, "towardAgency": -5 },
+    "escalate": { "towardPlayer": -2, "towardAgency": 0 },
+    "fastProcessing": { "towardPlayer": 3, "towardAgency": 2 },
+    "slowProcessing": { "towardPlayer": -5, "towardAgency": -2 }
+  },
+  "difficulty": {
+    "documentErrorChance": 0.3,
+    "forgeryComplexity": 0.3,
+    "baseTimePerCustomer": 90,
+    "archetypeWeights": {
+      "teen_driver": 0.12,
+      "elderly_driver": 0.10,
+      "shady_applicant": 0.08,
+      "recent_immigrant": 0.08,
+      "karen": 0.10,
+      "overprepared": 0.10,
+      "chronic_procrastinator": 0.10,
+      "charming_manipulator": 0.08,
+      "conspiracy_theorist": 0.05,
+      "flustered_parent": 0.09,
+      "serial_hobbyist": 0.05,
+      "vip_insider": 0.05
+    }
+  },
+  "supervisor": {
+    "types": ["byTheBook", "politician", "pragmatist", "corrupt"],
+    "reviewFrequency": "endOfShift",
+    "promotionThreshold": 90,
+    "warningThreshold": 60,
+    "probationWriteUps": 2
+  },
+  "minigames": {
+    "docVerify": {
+      "baseTime": 45,
+      "fields": 6,
+      "forgeryComplexity": 0.3
+    },
+    "dataEntry": {
+      "baseTime": 30,
+      "fields": 4,
+      "noiseLevel": 0.2
+    },
+    "photo": {
+      "retakeLimit": 2,
+      "glareChance": 0.25,
+      "movement": 0.4
+    }
+  }
+}

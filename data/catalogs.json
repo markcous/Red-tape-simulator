@@ -1,0 +1,301 @@
+{
+  "departments": {
+    "DMV": {
+      "name": "Department of Motor Vehicles",
+      "requestTypes": [
+        "LicenseRenewal",
+        "NewLicense",
+        "VehicleRegistration",
+        "PlateRenewal",
+        "TitleTransfer",
+        "DuplicateLicense",
+        "AddressChange",
+        "NameChange"
+      ],
+      "requiredDocsByRequest": {
+        "LicenseRenewal": ["driversLicense", "proofOfResidence"],
+        "NewLicense": ["birthCertificate", "socialSecurityCard", "proofOfResidence", "parentalConsent"],
+        "VehicleRegistration": ["titleDocument", "insuranceProof", "driversLicense", "billOfSale"],
+        "PlateRenewal": ["registrationCard", "insuranceProof"],
+        "TitleTransfer": ["titleDocument", "billOfSale", "driversLicense", "odometerDisclosure"],
+        "DuplicateLicense": ["driversLicense", "proofOfResidence"],
+        "AddressChange": ["driversLicense", "proofOfResidence"],
+        "NameChange": ["driversLicense", "courtOrder", "proofOfResidence"]
+      },
+      "fees": {
+        "LicenseRenewal": 32,
+        "NewLicense": 50,
+        "VehicleRegistration": 85,
+        "PlateRenewal": 45,
+        "TitleTransfer": 75,
+        "DuplicateLicense": 20,
+        "AddressChange": 10,
+        "NameChange": 15
+      }
+    },
+    "Parking": {
+      "name": "Parking Tickets & Violations",
+      "requestTypes": ["TicketPayment", "TicketAppeal", "PermitApplication", "PermitRenewal"],
+      "requiredDocsByRequest": {
+        "TicketPayment": ["ticketCitation", "driversLicense"],
+        "TicketAppeal": ["ticketCitation", "driversLicense", "evidencePhotos"],
+        "PermitApplication": ["driversLicense", "proofOfResidence", "vehicleRegistration"],
+        "PermitRenewal": ["parkingPermit", "driversLicense"]
+      },
+      "fees": {
+        "TicketPayment": 0,
+        "TicketAppeal": 25,
+        "PermitApplication": 60,
+        "PermitRenewal": 40
+      }
+    },
+    "Impound": {
+      "name": "Impound & Vehicle Release",
+      "requestTypes": ["VehicleRelease", "PropertyClaim", "AuctionInquiry"],
+      "requiredDocsByRequest": {
+        "VehicleRelease": ["driversLicense", "registrationCard", "insuranceProof", "releaseForm"],
+        "PropertyClaim": ["driversLicense", "policeReport", "proofOfOwnership"],
+        "AuctionInquiry": ["driversLicense"]
+      },
+      "fees": {
+        "VehicleRelease": 150,
+        "PropertyClaim": 50,
+        "AuctionInquiry": 0
+      }
+    }
+  },
+  "flags": {
+    "UNPAID_TICKETS": { "description": "Has unpaid parking tickets", "severities": ["low", "med", "high"] },
+    "EXPIRED_REGISTRATION": { "description": "Vehicle registration is expired", "severities": ["low", "med"] },
+    "SUSPENDED_LICENSE": { "description": "License currently suspended", "severities": ["high"] },
+    "INSURANCE_LAPSE": { "description": "Insurance coverage has lapsed", "severities": ["med", "high"] },
+    "IMPOUND_HOLD": { "description": "Vehicle held at impound lot", "severities": ["high"] },
+    "FRAUD_ALERT": { "description": "Previous fraud attempt on record", "severities": ["high"] },
+    "OUTSTANDING_FEES": { "description": "Has unpaid department fees", "severities": ["low", "med"] },
+    "WARRANT_FLAG": { "description": "Active warrant associated", "severities": ["high"] },
+    "VISION_TEST_REQUIRED": { "description": "Must complete vision test", "severities": ["low"] },
+    "ADDRESS_MISMATCH": { "description": "Address records don't match", "severities": ["med"] }
+  },
+  "reasonCodes": {
+    "Approve": {
+      "AllDocumentsValid": "All required documents present and verified",
+      "FeesPaid": "All applicable fees have been paid",
+      "ExemptionGranted": "Special exemption applies"
+    },
+    "Deny": {
+      "MissingDocument": "Required document not provided",
+      "ExpiredDocument": "One or more documents are expired",
+      "FailedVerification": "Document verification failed",
+      "OutstandingViolations": "Unresolved violations on record",
+      "SuspendedLicense": "License is currently suspended",
+      "InsuranceLapse": "No valid insurance on file",
+      "FraudSuspected": "Suspected fraudulent documentation",
+      "ImpoundHold": "Vehicle under impound hold"
+    },
+    "Escalate": {
+      "SupervisorRequired": "Case requires supervisor approval",
+      "PolicyException": "Requesting policy exception",
+      "ComplexCase": "Case exceeds standard complexity",
+      "CustomerEscalation": "Customer requested supervisor"
+    }
+  },
+  "personalityTraits": {
+    "temperaments": ["calm", "irritable", "charming", "anxious", "stubborn", "friendly", "suspicious", "distracted"],
+    "bodyTypes": ["slim", "average", "heavy", "athletic"],
+    "hairStyles": ["short", "long", "buzz", "curly", "bald", "ponytail", "mohawk", "braids"],
+    "hairColors": ["black", "brown", "blonde", "red", "gray", "white", "dyed-blue", "dyed-pink"],
+    "accessories": ["glasses", "sunglasses", "hat", "earrings", "necklace", "watch", "scarf", "headphones"]
+  },
+  "archetypes": [
+    {
+      "id": "teen_driver",
+      "name": "Teen Permit Seeker",
+      "description": "Nervous teen getting their first license",
+      "ageRange": [16, 19],
+      "temperamentWeights": { "anxious": 0.4, "friendly": 0.3, "distracted": 0.3 },
+      "patience": [40, 70],
+      "honesty": [70, 95],
+      "compliance": [50, 80],
+      "persuasion": [20, 50],
+      "commonRequests": ["NewLicense"],
+      "missingDocChance": 0.4,
+      "fraudChance": 0.01,
+      "dialogueStyle": "nervous"
+    },
+    {
+      "id": "elderly_driver",
+      "name": "Elderly Vision-Check Applicant",
+      "description": "Senior citizen renewing their license",
+      "ageRange": [65, 85],
+      "temperamentWeights": { "stubborn": 0.3, "friendly": 0.3, "irritable": 0.2, "calm": 0.2 },
+      "patience": [30, 60],
+      "honesty": [80, 100],
+      "compliance": [40, 70],
+      "persuasion": [30, 60],
+      "commonRequests": ["LicenseRenewal"],
+      "missingDocChance": 0.25,
+      "fraudChance": 0.0,
+      "dialogueStyle": "slow"
+    },
+    {
+      "id": "shady_applicant",
+      "name": "Shady Documentation Seeker",
+      "description": "Someone with questionable documents",
+      "ageRange": [25, 55],
+      "temperamentWeights": { "charming": 0.3, "suspicious": 0.3, "calm": 0.2, "irritable": 0.2 },
+      "patience": [30, 60],
+      "honesty": [10, 40],
+      "compliance": [20, 50],
+      "persuasion": [60, 90],
+      "commonRequests": ["NewLicense", "TitleTransfer", "VehicleRegistration"],
+      "missingDocChance": 0.15,
+      "fraudChance": 0.6,
+      "dialogueStyle": "evasive"
+    },
+    {
+      "id": "recent_immigrant",
+      "name": "Recently Moved Foreigner",
+      "description": "New resident converting foreign documents",
+      "ageRange": [22, 50],
+      "temperamentWeights": { "anxious": 0.3, "friendly": 0.3, "calm": 0.3, "confused": 0.1 },
+      "patience": [50, 80],
+      "honesty": [80, 100],
+      "compliance": [60, 90],
+      "persuasion": [20, 40],
+      "commonRequests": ["NewLicense", "VehicleRegistration"],
+      "missingDocChance": 0.5,
+      "fraudChance": 0.02,
+      "dialogueStyle": "confused"
+    },
+    {
+      "id": "karen",
+      "name": "Angry Karen",
+      "description": "Confrontational customer who blames the system",
+      "ageRange": [30, 60],
+      "temperamentWeights": { "irritable": 0.5, "stubborn": 0.3, "suspicious": 0.2 },
+      "patience": [10, 30],
+      "honesty": [60, 80],
+      "compliance": [20, 40],
+      "persuasion": [50, 80],
+      "commonRequests": ["LicenseRenewal", "PlateRenewal", "AddressChange"],
+      "missingDocChance": 0.2,
+      "fraudChance": 0.05,
+      "dialogueStyle": "aggressive"
+    },
+    {
+      "id": "overprepared",
+      "name": "Overprepared Rule-Follower",
+      "description": "Has every form, multiple copies, binder of documents",
+      "ageRange": [30, 65],
+      "temperamentWeights": { "calm": 0.4, "anxious": 0.3, "friendly": 0.3 },
+      "patience": [70, 100],
+      "honesty": [90, 100],
+      "compliance": [90, 100],
+      "persuasion": [10, 30],
+      "commonRequests": ["LicenseRenewal", "VehicleRegistration", "PlateRenewal"],
+      "missingDocChance": 0.0,
+      "fraudChance": 0.0,
+      "dialogueStyle": "thorough"
+    },
+    {
+      "id": "chronic_procrastinator",
+      "name": "Chronic Procrastinator",
+      "description": "Always late on renewals with multiple issues",
+      "ageRange": [22, 45],
+      "temperamentWeights": { "anxious": 0.3, "charming": 0.3, "distracted": 0.4 },
+      "patience": [30, 50],
+      "honesty": [50, 80],
+      "compliance": [30, 50],
+      "persuasion": [40, 70],
+      "commonRequests": ["LicenseRenewal", "PlateRenewal"],
+      "missingDocChance": 0.35,
+      "fraudChance": 0.05,
+      "dialogueStyle": "rushed"
+    },
+    {
+      "id": "charming_manipulator",
+      "name": "Charming Manipulator",
+      "description": "Tries to win you over with humor and compliments",
+      "ageRange": [25, 50],
+      "temperamentWeights": { "charming": 0.6, "friendly": 0.3, "calm": 0.1 },
+      "patience": [40, 70],
+      "honesty": [30, 60],
+      "compliance": [30, 60],
+      "persuasion": [70, 95],
+      "commonRequests": ["LicenseRenewal", "TitleTransfer", "NameChange"],
+      "missingDocChance": 0.2,
+      "fraudChance": 0.15,
+      "dialogueStyle": "charming"
+    },
+    {
+      "id": "conspiracy_theorist",
+      "name": "Conspiracy Theorist",
+      "description": "Has unusual beliefs about government processes",
+      "ageRange": [30, 70],
+      "temperamentWeights": { "suspicious": 0.4, "stubborn": 0.3, "irritable": 0.2, "distracted": 0.1 },
+      "patience": [20, 50],
+      "honesty": [60, 90],
+      "compliance": [10, 30],
+      "persuasion": [20, 50],
+      "commonRequests": ["LicenseRenewal", "DuplicateLicense"],
+      "missingDocChance": 0.3,
+      "fraudChance": 0.02,
+      "dialogueStyle": "paranoid"
+    },
+    {
+      "id": "flustered_parent",
+      "name": "Flustered Parent",
+      "description": "Distracted by kids, drops papers, gives wrong info",
+      "ageRange": [25, 45],
+      "temperamentWeights": { "anxious": 0.3, "friendly": 0.3, "distracted": 0.4 },
+      "patience": [20, 50],
+      "honesty": [70, 95],
+      "compliance": [50, 70],
+      "persuasion": [30, 50],
+      "commonRequests": ["VehicleRegistration", "LicenseRenewal", "AddressChange"],
+      "missingDocChance": 0.45,
+      "fraudChance": 0.0,
+      "dialogueStyle": "scattered"
+    },
+    {
+      "id": "serial_hobbyist",
+      "name": "Serial Hobbyist",
+      "description": "Changes vanity plates constantly, knows every rule",
+      "ageRange": [25, 60],
+      "temperamentWeights": { "friendly": 0.4, "calm": 0.3, "charming": 0.3 },
+      "patience": [60, 90],
+      "honesty": [80, 100],
+      "compliance": [70, 90],
+      "persuasion": [50, 70],
+      "commonRequests": ["PlateRenewal", "VehicleRegistration"],
+      "missingDocChance": 0.05,
+      "fraudChance": 0.0,
+      "dialogueStyle": "enthusiastic"
+    },
+    {
+      "id": "vip_insider",
+      "name": "\"I Know a Guy\" Insider",
+      "description": "Drops names of officials for special treatment",
+      "ageRange": [35, 65],
+      "temperamentWeights": { "charming": 0.3, "stubborn": 0.3, "irritable": 0.2, "calm": 0.2 },
+      "patience": [30, 60],
+      "honesty": [40, 70],
+      "compliance": [30, 50],
+      "persuasion": [60, 90],
+      "commonRequests": ["LicenseRenewal", "TitleTransfer", "VehicleRegistration"],
+      "missingDocChance": 0.2,
+      "fraudChance": 0.1,
+      "dialogueStyle": "entitled"
+    }
+  ],
+  "names": {
+    "first": ["James", "Maria", "Robert", "Patricia", "Michael", "Jennifer", "William", "Linda", "David", "Elizabeth", "Carlos", "Rosa", "Ahmed", "Fatima", "Wei", "Mei", "Jamal", "Keisha", "Dmitri", "Svetlana", "Giuseppe", "Sofia", "Hiroshi", "Yuki", "Pierre", "Marie", "Hans", "Greta", "Raj", "Priya", "Bob", "Karen", "Chad", "Brenda", "Eugene", "Mildred", "Trevor", "Destiny", "Cletus", "Dorothy", "Aiden", "Zoe", "Bartholomew", "Gertrude", "Vladislav", "Consuela", "Murphy", "Fiona", "Sven", "Ingrid"],
+    "last": ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson", "Martin", "Lee", "Perez", "Thompson", "White", "Harris", "Sanchez", "Clark", "Lewis", "Robinson", "Walker", "Kim", "Nguyen", "Chen", "Patel", "O'Brien", "Kowalski", "Müller", "Tanaka", "Petrov", "Dubois", "Morales", "Fitzgerald", "Van der Berg", "Johansson", "McCallister"]
+  },
+  "addresses": [
+    "14 Oak St", "2201 Elm Ave", "78 Pine Rd", "331 Maple Dr", "45 Cedar Ln",
+    "112 Birch Blvd", "67 Walnut Way", "899 Spruce Ct", "23 Willow Pl", "550 Aspen Circle",
+    "1742 Main St Apt 4B", "309 Commerce Dr", "88 Industrial Pkwy", "4100 Sunset Blvd",
+    "612 Lakeview Terrace", "27 Harbor Rd", "1500 University Ave", "333 Government Plaza"
+  ]
+}
