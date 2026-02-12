@@ -5,6 +5,16 @@ import { SupervisorSystem } from './systems/supervisor.js';
 import { ShiftManager } from './systems/shift-manager.js';
 import { SeededRNG } from './models/rng.js';
 
+export const GamePhase = Object.freeze({
+  LOADING: 'loading',
+  MENU: 'menu',
+  SHIFT_START: 'shift_start',
+  SERVING: 'serving',
+  RESULT: 'result',
+  BRIBE: 'bribe',
+  REVIEW: 'review'
+});
+
 export class Game {
   constructor() {
     this.player = null;
@@ -16,17 +26,89 @@ export class Game {
     this.balancing = null;
     this.dialogueData = null;
 
-    // Current state
-    this.state = 'loading'; // loading, menu, shift_start, serving, decision, result, bribe, shift_end, review
-    this.currentNPC = null;
-    this.currentCase = null;
-    this.currentDocReview = null;
-    this.caseStartTime = 0;
-    this.npcPool = [];
+    // Centralized game state
+    this.gameState = {
+      phase: GamePhase.LOADING,
+      day: 1,
+      shiftTimeRemaining: null,
+      currentNPC: null,
+      currentCase: null,
+      currentDocReview: null,
+      caseStartTime: 0,
+      npcPool: [],
+      auditRisk: 0,
+      reputation: 0,
+      eventLog: [],
+      eventCounter: 0,
+      seed: Date.now()
+    };
+
+    this.runRng = new SeededRNG(this.gameState.seed);
 
     // UI callback
     this.onStateChange = null;
     this.onEvent = null;
+  }
+
+  get state() {
+    return this.gameState.phase;
+  }
+
+  set state(phase) {
+    this.gameState.phase = phase;
+  }
+
+  get currentNPC() {
+    return this.gameState.currentNPC;
+  }
+
+  set currentNPC(npc) {
+    this.gameState.currentNPC = npc;
+  }
+
+  get currentCase() {
+    return this.gameState.currentCase;
+  }
+
+  set currentCase(caseData) {
+    this.gameState.currentCase = caseData;
+  }
+
+  get caseStartTime() {
+    return this.gameState.caseStartTime;
+  }
+
+  set caseStartTime(timestamp) {
+    this.gameState.caseStartTime = timestamp;
+  }
+
+  get npcPool() {
+    return this.gameState.npcPool;
+  }
+
+  set npcPool(pool) {
+    this.gameState.npcPool = pool;
+  }
+
+  setSeed(seed) {
+    this.gameState.seed = seed;
+    this.runRng = new SeededRNG(seed);
+  }
+
+  getDeterministicRng(salt = 0) {
+    return new SeededRNG(this.gameState.seed + this.gameState.eventCounter++ + salt);
+  }
+
+  logEvent(type, payload = {}) {
+    this.gameState.eventLog.push({
+      at: new Date().toISOString(),
+      shift: this.player?.shiftNumber ?? 0,
+      type,
+      payload
+    });
+    if (this.gameState.eventLog.length > 500) {
+      this.gameState.eventLog.shift();
+    }
   }
 
   async init() {
@@ -51,7 +133,7 @@ export class Game {
     // Try to load saved game
     this.loadGame();
 
-    this.state = 'menu';
+    this.state = GamePhase.MENU;
     this.emit('stateChange', { state: this.state });
   }
 
@@ -70,7 +152,7 @@ export class Game {
     this.supervisor.initialize(this.player.shiftNumber);
 
     // Generate customer queue
-    const customerCount = new SeededRNG(this.player.shiftNumber).nextInt(
+    const customerCount = this.runRng.nextInt(
       this.balancing.shift.customersPerShift[0],
       this.balancing.shift.customersPerShift[1]
     );
@@ -82,7 +164,12 @@ export class Game {
     );
 
     this.shiftManager.startShift(this.player.shiftNumber, queue);
-    this.state = 'shift_start';
+    this.state = GamePhase.SHIFT_START;
+    this.logEvent('SHIFT_STARTED', {
+      shiftNumber: this.player.shiftNumber,
+      customerCount,
+      supervisor: this.supervisor.name
+    });
     this.emit('stateChange', {
       state: this.state,
       shiftNumber: this.player.shiftNumber,
@@ -133,13 +220,13 @@ export class Game {
     const archetype = this.catalogs.archetypes.find(a => a.id === npc.archetype);
     const dialogueStyle = archetype ? archetype.dialogueStyle : 'nervous';
     const greetingPool = this.dialogueData.greetings[dialogueStyle] || this.dialogueData.greetings.nervous;
-    const rng = new SeededRNG(npc.rng.masterSeed + this.player.shiftNumber);
+    const rng = this.getDeterministicRng(npc.rng.masterSeed + this.player.shiftNumber);
     let greeting = rng.pick(greetingPool);
     greeting = greeting
       .replace('{{requestType}}', this.caseGenerator.formatRequestType(caseData.caseRecord.requestType))
       .replace('{{supervisorName}}', this.supervisor.name);
 
-    this.state = 'serving';
+    this.state = GamePhase.SERVING;
     this.emit('stateChange', {
       state: this.state,
       npc: {
@@ -201,7 +288,7 @@ export class Game {
     }
 
     // Determine customer reaction
-    const rng = new SeededRNG(this.currentNPC.rng.masterSeed + processingTime);
+    const rng = this.getDeterministicRng(this.currentNPC.rng.masterSeed + Math.floor(processingTime * 1000));
     let reaction = '';
     if (action === 'Approve') {
       const pool = this.dialogueData.reactions.approved[evaluation.sentiment === 'happy' ? 'happy' : 'neutral'];
@@ -231,7 +318,12 @@ export class Game {
     // Check for bribe attempt
     const bribeCondition = this.currentCase.caseRecord.inputs.conditions.find(c => c.type === 'bribe_attempt');
     if (bribeCondition && action === 'Deny') {
-      this.state = 'bribe';
+      this.state = GamePhase.BRIBE;
+      this.logEvent('BRIBE_OFFERED', {
+        caseId: this.currentCase.caseRecord.caseId,
+        npcId: this.currentNPC.npcId,
+        amount: bribeCondition.bribeAmount
+      });
       this.emit('stateChange', {
         state: 'bribe',
         npc: this.currentNPC.toJSON(),
@@ -241,7 +333,14 @@ export class Game {
       return;
     }
 
-    this.state = 'result';
+    this.state = GamePhase.RESULT;
+    this.logEvent('CASE_RESOLVED', {
+      caseId: this.currentCase.caseRecord.caseId,
+      npcId: this.currentNPC.npcId,
+      decision: playerDecision,
+      correct: evaluation.correct,
+      sentiment: evaluation.sentiment
+    });
     this.emit('stateChange', {
       state: 'result',
       evaluation,
@@ -267,7 +366,12 @@ export class Game {
       feedback = "You firmly declined. The customer looks disappointed but moves on.";
     }
 
-    this.state = 'result';
+    this.state = GamePhase.RESULT;
+    this.logEvent('BRIBE_RESPONSE', {
+      caseId: this.currentCase?.caseRecord?.caseId,
+      npcId: this.currentNPC?.npcId,
+      accepted
+    });
     this.emit('stateChange', {
       state: 'result',
       evaluation: { correct: !accepted, sentiment: accepted ? 'neutral' : 'annoyed' },
@@ -289,7 +393,12 @@ export class Game {
     const shiftSummary = this.shiftManager.getShiftSummary();
     const newAchievements = this.player.checkAchievements();
 
-    this.state = 'review';
+    this.state = GamePhase.REVIEW;
+    this.logEvent('SHIFT_COMPLETED', {
+      shiftNumber: this.player.shiftNumber,
+      score: shiftResult.score,
+      writeUps: this.player.writeUps
+    });
     this.emit('stateChange', {
       state: 'review',
       shiftResult,
@@ -314,6 +423,11 @@ export class Game {
       player: this.player.toJSON(),
       npcPool: this.npcPool.map(n => n.toJSON()),
       globalSeed: this.npcGenerator.globalSeed,
+      gameState: {
+        seed: this.gameState.seed,
+        eventLog: this.gameState.eventLog,
+        eventCounter: this.gameState.eventCounter
+      },
       version: 1
     };
     try {
@@ -331,6 +445,11 @@ export class Game {
         if (save.version === 1) {
           this.player = PlayerState.fromJSON(save.player);
           this.npcGenerator.setGlobalSeed(save.globalSeed);
+          if (save.gameState?.seed) {
+            this.setSeed(save.gameState.seed);
+            this.gameState.eventLog = save.gameState.eventLog || [];
+            this.gameState.eventCounter = save.gameState.eventCounter || 0;
+          }
           // NPC pool would need proper NPC.fromJSON reconstruction
           return true;
         }
@@ -345,14 +464,20 @@ export class Game {
     localStorage.removeItem('redTapeSave');
     this.player = new PlayerState();
     this.npcPool = [];
-    this.npcGenerator.setGlobalSeed(Date.now());
-    this.state = 'menu';
+    const freshSeed = Date.now();
+    this.npcGenerator.setGlobalSeed(freshSeed);
+    this.setSeed(freshSeed);
+    this.gameState.eventLog = [];
+    this.gameState.eventCounter = 0;
+    this.state = GamePhase.MENU;
     this.emit('stateChange', { state: this.state });
   }
 
   getGameState() {
     return {
       state: this.state,
+      seed: this.gameState.seed,
+      eventLog: this.gameState.eventLog,
       player: this.player,
       shiftNumber: this.player.shiftNumber,
       department: this.player.department
