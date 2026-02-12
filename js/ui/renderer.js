@@ -11,6 +11,9 @@ export class UIRenderer {
 
     this.game.onStateChange = (data) => this.handleStateChange(data);
     this.game.onEvent = (event, data) => this.handleEvent(event, data);
+
+    // Render current game state immediately in case init happened before UI hooks were attached.
+    this.handleStateChange({ state: this.game.state });
   }
 
   cacheElements() {
@@ -158,8 +161,9 @@ export class UIRenderer {
     this.elements.menuScreen.classList.remove('hidden');
     const player = this.game.player;
     const stats = this.elements.menuStats;
-    if (stats && player.shiftsCompleted > 0) {
-      stats.innerHTML = `
+
+    if (stats) {
+      const summaryHtml = player.shiftsCompleted > 0 ? `
         <div class="stat-grid">
           <div class="stat-item"><span class="stat-label">Shifts Completed</span><span class="stat-value">${player.shiftsCompleted}</span></div>
           <div class="stat-item"><span class="stat-label">Department</span><span class="stat-value">${player.department}</span></div>
@@ -168,9 +172,29 @@ export class UIRenderer {
           <div class="stat-item"><span class="stat-label">Clean Streak</span><span class="stat-value">${player.cleanShiftStreak}</span></div>
           <div class="stat-item"><span class="stat-label">Write-ups</span><span class="stat-value">${player.writeUps}</span></div>
         </div>
+      ` : '<p class="menu-note">Enable development hints for QA/testing visibility.</p>';
+
+      stats.innerHTML = `
+        ${summaryHtml}
+        <label class="dev-mode-toggle" title="Enable additional UI hints for balancing and QA testing.">
+          <input type="checkbox" id="dev-mode-toggle" ${this.game.developmentMode ? 'checked' : ''}>
+          Development hints
+        </label>
       `;
       stats.classList.remove('hidden');
+
+      const toggle = stats.querySelector('#dev-mode-toggle');
+      if (toggle) {
+        toggle.addEventListener('change', () => {
+          this.game.setDevelopmentMode(toggle.checked);
+          this.showNotification(`Development hints ${toggle.checked ? 'enabled' : 'disabled'}.`);
+          if (this.game.state === 'serving' && this.game.currentCase) {
+            this.renderDocuments(this.game.currentCase.documents, this.game.currentCase.caseRecord, this.game.currentCase.possibleIssues);
+          }
+        });
+      }
     }
+
     this.elements.startShiftBtn.textContent = player.shiftsCompleted > 0 ? 'Start Next Shift' : 'Start First Shift';
   }
 
@@ -335,14 +359,14 @@ export class UIRenderer {
     for (const docType of requiredDocs) {
       const doc = documents[docType];
       const docName = this.game.caseGenerator.formatDocName(docType);
-      const hasIssue = doc && (doc.errors.length > 0 || !doc.present || doc.expired);
+      const hasIssue = this.game.developmentMode && doc && (doc.errors.length > 0 || !doc.present || doc.expired);
       tabs.push({
         id: docType,
         label: docName,
         icon: doc?.present ? '&check;' : '&cross;',
         hasIssue
       });
-      contents[docType] = doc ? this.renderDocumentDetail(doc, docType) : '<p class="doc-missing">DOCUMENT NOT PROVIDED</p>';
+      contents[docType] = this.renderDocumentDetail(doc, docType, caseRecord);
     }
 
     // Render tabs
@@ -412,20 +436,15 @@ export class UIRenderer {
     `;
   }
 
-  renderDocumentDetail(doc, docType) {
-    if (!doc.present) {
-      return `
-        <div class="doc-detail doc-missing">
-          <div class="missing-stamp">NOT PROVIDED</div>
-          <p>The customer did not bring this document.</p>
-        </div>
-      `;
+  renderDocumentDetail(doc, docType, caseRecord = null) {
+    if (!doc || !doc.present) {
+      return this.renderMissingDocumentDetail(docType, caseRecord);
     }
 
     const docName = this.game.caseGenerator.formatDocName(docType);
     let statusClass = 'valid';
     let statusText = 'VALID';
-    if (doc.forged) {
+    if (doc.forged && this.game.developmentMode) {
       statusClass = 'forged';
       statusText = 'SUSPICIOUS';
     } else if (doc.expired) {
@@ -453,7 +472,7 @@ export class UIRenderer {
 
     // Forgery hints
     let forgeryHints = '';
-    if (doc.forged) {
+    if (doc.forged && this.game.developmentMode) {
       const hintMap = {
         'name_mismatch': 'Name does not match citizen records',
         'photo_mismatch': 'Photo does not appear to match the person',
@@ -479,6 +498,26 @@ export class UIRenderer {
         </div>
         <div class="doc-fields">${dataEntries}</div>
         ${forgeryHints}
+      </div>
+    `;
+  }
+
+  renderMissingDocumentDetail(docType, caseRecord) {
+    const docName = this.game.caseGenerator.formatDocName(docType);
+    const requestType = caseRecord?.requestType?.replace(/([A-Z])/g, ' $1').trim() || 'Request';
+
+    return `
+      <div class="doc-detail doc-review-note">
+        <div class="doc-header">
+          <h4>${docName}</h4>
+          <span class="doc-status status-review">PENDING VERIFICATION</span>
+        </div>
+        <div class="doc-placeholder">
+          <p><strong>Clerk note:</strong> Applicant states this document is unavailable at the window.</p>
+          <p>Case type: ${requestType}</p>
+          <p>Action required: confirm whether this document is mandatory before approval.</p>
+          <p class="doc-subtle">No digital copy is attached to this case file.</p>
+        </div>
       </div>
     `;
   }
