@@ -11,6 +11,9 @@ export class UIRenderer {
 
     this.game.onStateChange = (data) => this.handleStateChange(data);
     this.game.onEvent = (event, data) => this.handleEvent(event, data);
+
+    // Render current game state immediately in case init happened before UI hooks were attached.
+    this.handleStateChange({ state: this.game.state });
   }
 
   cacheElements() {
