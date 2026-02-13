@@ -358,7 +358,7 @@ body {
 /* Main game area */
 .game-main {
   display: grid;
-  grid-template-columns: 350px 1fr 280px;
+  grid-template-columns: 320px minmax(520px, 1fr) 360px;
   gap: 0;
   height: calc(100vh - 52px);
   overflow: hidden;
@@ -551,31 +551,44 @@ body {
   gap: 8px;
 }
 
-.info-item {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.85rem;
-  padding: 4px 0;
-  border-bottom: 1px solid var(--border);
+.mission-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+  font-size: 0.86rem;
 }
 
-.info-item .label {
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.5px;
-}
-
-.info-item .value.highlight {
+.mission-card h3 {
+  font-size: 0.8rem;
   color: var(--accent-gold);
-  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
 }
 
-.info-item.returning {
-  color: var(--accent-yellow);
-  font-weight: 600;
-  border-bottom: none;
-  padding-top: 8px;
+.mission-secondary {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.dev-diagnostics {
+  margin-top: 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: rgba(33, 150, 243, 0.08);
+  font-size: 0.78rem;
+}
+
+.dev-diagnostics h4 {
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--accent-blue);
+  font-size: 0.72rem;
 }
 
 .patience-bar {
@@ -599,7 +612,7 @@ body {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
-  max-height: 42vh;
+  max-height: 48vh;
   overflow-y: auto;
 }
 

@@ -263,7 +263,7 @@ export class UIRenderer {
 
   updateHUD(queueStatus) {
     if (this.elements.clockDisplay) {
-      this.elements.clockDisplay.textContent = queueStatus.time;
+      this.elements.clockDisplay.textContent = `${queueStatus.time} • ${this.getCurrentDateLabel()}`;
     }
     if (this.elements.queueCounter) {
       this.elements.queueCounter.textContent = `${queueStatus.served}/${queueStatus.total}`;
@@ -274,6 +274,17 @@ export class UIRenderer {
     if (this.elements.moneyDisplay) {
       this.elements.moneyDisplay.textContent = `$${this.game.player.money}`;
     }
+  }
+
+  getCurrentDateLabel() {
+    const shift = Math.max(1, this.game.player?.shiftNumber || 1);
+    const baseDate = new Date('1998-01-05T08:00:00');
+    baseDate.setDate(baseDate.getDate() + shift - 1);
+    return baseDate.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric'
+    });
   }
 
   renderCustomer(data) {
@@ -302,16 +313,27 @@ export class UIRenderer {
 
     if (this.elements.customerInfo) {
       const requestName = data.caseRecord.requestType.replace(/([A-Z])/g, ' $1').trim();
-      this.elements.customerInfo.innerHTML = `
-        <div class="info-grid">
-          <div class="info-item"><span class="label">Request:</span> <span class="value highlight">${requestName}</span></div>
-          <div class="info-item"><span class="label">Age:</span> <span class="value">${npc.age}</span></div>
-          <div class="info-item"><span class="label">Address:</span> <span class="value">${npc.identity.address}</span></div>
-          <div class="info-item"><span class="label">Patience:</span> <span class="value">${this.renderPatienceBar(npc.personality.patience)}</span></div>
-          <div class="info-item"><span class="label">Temperament:</span> <span class="value">${npc.personality.temperament}</span></div>
-          <div class="info-item"><span class="label">Fee:</span> <span class="value">$${data.caseRecord.inputs.fee}</span></div>
-          ${npc.isReturning ? '<div class="info-item returning"><span class="label">RETURNING CUSTOMER</span></div>' : ''}
+      const missionNarrative = `${npc.fullName} is requesting ${requestName}. Verify required paperwork, apply policy, and decide whether to approve, deny, or escalate.`;
+      const contextNarrative = npc.isReturning
+        ? `${npc.fullName} is a returning resident and may reference prior visits.`
+        : `${npc.fullName} appears to be a first-time interaction in your current memory.`;
+
+      const devDiagnostics = this.game.developmentMode ? `
+        <div class="dev-diagnostics">
+          <h4>Development Diagnostics</h4>
+          <p>Temperament: <strong>${npc.personality.temperament}</strong></p>
+          <p>Patience: ${this.renderPatienceBar(npc.personality.patience)}</p>
         </div>
+      ` : '';
+
+      this.elements.customerInfo.innerHTML = `
+        <div class="mission-card">
+          <h3>Mission</h3>
+          <p>${missionNarrative}</p>
+          <p class="mission-secondary">${contextNarrative}</p>
+          <p><strong>Fee at stake:</strong> $${data.caseRecord.inputs.fee}</p>
+        </div>
+        ${devDiagnostics}
       `;
     }
   }
@@ -427,12 +449,11 @@ export class UIRenderer {
 
     return `
       <div class="system-records left-system-records">
-        <h4>System Records</h4>
+        <h4>Records Queue Entry</h4>
         <div class="record-grid">
-          <div><span class="label">Request:</span> ${this.game.caseGenerator.formatRequestType(caseRecord.requestType)}</div>
-          <div><span class="label">Name:</span> ${npc.fullName}</div>
-          <div><span class="label">DOB:</span> ${npc.identity.dob}</div>
-          <div><span class="label">Address:</span> ${npc.identity.address}</div>
+          <div><span class="label">Case Type:</span> ${this.game.caseGenerator.formatRequestType(caseRecord.requestType)}</div>
+          <div><span class="label">Required Docs:</span> ${requiredDocs.length}</div>
+          <div><span class="label">Submitted Docs:</span> ${providedDocs.length}</div>
           <div><span class="label">Prior Visits:</span> ${npc.caseHistory.length}</div>
         </div>
         <div class="record-checklist">
