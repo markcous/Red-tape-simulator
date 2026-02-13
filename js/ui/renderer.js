@@ -590,6 +590,7 @@ export class UIRenderer {
 
       card.addEventListener('pointerdown', (ev) => {
         if (ev.button !== 0) return;
+        if (ev.target.closest('button, input, label, a, select, textarea')) return;
         card.style.zIndex = String(++this.paperDragZ);
         card.classList.add('drag-active');
         onPointerMove(ev);
@@ -610,6 +611,7 @@ export class UIRenderer {
         if (action) this.applyStampDecision(action);
       });
       appCard.addEventListener('click', () => {
+        if (appCard.classList.contains('drag-active')) return;
         const selected = document.querySelector('.stamp-token.dragging-stamp');
         if (selected) this.applyStampDecision(selected.dataset.action);
       });
@@ -619,6 +621,15 @@ export class UIRenderer {
   applyStampDecision(action) {
     if (!action) return;
     const denyReasons = Object.keys(this.game.catalogs.reasonCodes.Deny || {});
+    if (action === 'Deny') {
+      const denyReasonButtons = this.elements.denyReasons?.querySelectorAll('.deny-reason-btn') || [];
+      if (denyReasonButtons.length > 0) {
+        this.elements.denyReasons.classList.add('expanded');
+        this.showNotification('Select a deny reason to finalize the DENY stamp.');
+        return;
+      }
+    }
+
     const reason = action === 'Deny'
       ? (denyReasons[0] || 'MissingDocument')
       : (action === 'Escalate' ? 'SupervisorRequired' : 'AllDocumentsValid');
@@ -647,7 +658,8 @@ export class UIRenderer {
       `;
     }
 
-    const checklistState = this.game.getChecklistState(caseRecord.caseId || caseRecord.caseRecord?.caseId || caseRecord.caseId);
+    const checklistCaseId = caseRecord.caseId || caseRecord.caseRecord?.caseId;
+    const checklistState = this.game.getChecklistState(checklistCaseId);
     const checklistBoxes = requiredDocs.map(docType => {
       const checked = Boolean(checklistState[docType]);
       return `
