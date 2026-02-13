@@ -3,9 +3,9 @@ import { DeskDocumentTemplates } from './templates.js';
 import { PersonData, VehicleData, PolicyData } from './document-data.js';
 
 const SIZE_PRESETS = {
-  Letter: { w: 280, h: 360 },
-  HalfSheet: { w: 240, h: 280 },
-  WalletCard: { w: 250, h: 170 }
+  Letter: { w: 378, h: 486 },
+  HalfSheet: { w: 324, h: 378 },
+  WalletCard: { w: 338, h: 230 }
 };
 
 export class DeskDocument extends DeskItem {

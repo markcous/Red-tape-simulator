@@ -2027,3 +2027,111 @@ body {
   font-size: 11px;
   cursor: pointer;
 }
+
+/* Physical desk presentation refactor overrides */
+#DMVDeskUI {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.06), transparent 36%),
+    linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.35)),
+    repeating-linear-gradient(90deg, #6a4a2c 0px, #6a4a2c 28px, #5b3f26 28px, #5b3f26 56px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#customer-panel,
+#document-panel,
+.right-panel,
+#flags-panel,
+#decision-panel,
+#document-tabs {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+#customer-panel {
+  position: relative;
+  margin: 16px;
+  border-radius: 16px;
+  background: #1a1e24 !important;
+  border: 8px solid #0e1116 !important;
+  box-shadow: 0 24px 34px rgba(0, 0, 0, 0.35), inset 0 0 0 2px rgba(255,255,255,0.06) !important;
+}
+
+#queue-display {
+  margin-top: 12px;
+  background: #041007;
+  border: 1px solid #18aa40;
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: inset 0 0 0 1px rgba(95, 255, 147, 0.18), 0 0 18px rgba(24, 170, 64, 0.24);
+}
+
+#document-content {
+  padding: 24px 30px 20px;
+}
+
+.workspace-surface {
+  background: transparent;
+}
+
+.workspace-document,
+.desk-item,
+.paper-sheet .doc-detail {
+  box-shadow: 0 16px 28px rgba(0, 0, 0, 0.4), 0 3px 8px rgba(0, 0, 0, 0.28);
+}
+
+.desk-item.held {
+  box-shadow: 0 24px 36px rgba(0, 0, 0, 0.5), 0 6px 12px rgba(0,0,0,0.3);
+}
+
+#decision-panel {
+  position: absolute;
+  right: 34px;
+  bottom: 104px;
+  width: 330px;
+  pointer-events: none;
+}
+
+#decision-panel h3,
+#approve-btn,
+#deny-btn,
+#escalate-btn {
+  display: none !important;
+}
+
+#deny-reasons {
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(38, 31, 26, 0.2);
+}
+
+.stamp-tray {
+  pointer-events: auto;
+  display: flex;
+  gap: 16px;
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.stamp-token {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  border-width: 3px;
+  box-shadow: 0 10px 14px rgba(0, 0, 0, 0.35), inset 0 -8px 10px rgba(0, 0, 0, 0.2);
+  background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.4), rgba(255,255,255,0.08));
+}
+
+.stamp-help {
+  display: none;
+}
+
+.right-panel {
+  position: relative;
+}
