@@ -541,6 +541,7 @@ export class UIRenderer {
 
     if (!this.elements.documentContent) return;
     this.ensureDeskWorkspace();
+    this.deskWorkspace?.setDebugMode(this.game.developmentMode);
 
     const packet = this.buildWorkspacePacket(caseRecord, providedDocs, issues);
     this.deskWorkspace.clear();
@@ -552,7 +553,8 @@ export class UIRenderer {
     this.deskWorkspace = new DeskWorkspace({
       root: this.elements.documentContent,
       onStamp: (action) => this.applyStampDecision(action),
-      seed: 1337
+      seed: 1337,
+      debugMode: this.game.developmentMode
     });
   }
 

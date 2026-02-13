@@ -1,7 +1,7 @@
 import { DeskSpawner } from './desk-spawner.js';
 
 export class DeskWorkspace {
-  constructor({ root, onStamp = null, seed = 1337 }) {
+  constructor({ root, onStamp = null, seed = 1337, debugMode = false }) {
     this.root = root;
     this.onStamp = onStamp;
     this.items = [];
@@ -10,6 +10,7 @@ export class DeskWorkspace {
     this.showDataOverlays = false;
     this.seed = seed;
     this._rngState = seed;
+    this.debugMode = Boolean(debugMode);
     this.spawner = new DeskSpawner(this, seed);
     this.animationHandle = null;
     this.ensureShell();
@@ -23,6 +24,7 @@ export class DeskWorkspace {
     this.stack = this.root.querySelector('.workspace-stack');
     this.deskRect = this.surface.getBoundingClientRect();
     this.ensureDebugPanel();
+    this.applyDebugState();
   }
 
   ensureDebugPanel() {
@@ -35,8 +37,10 @@ export class DeskWorkspace {
       <button type="button" data-action="overlay">Toggle Data Overlay</button>
     `;
     this.root.appendChild(panel);
+    this.debugPanel = panel;
 
     panel.addEventListener('click', (event) => {
+      if (!this.debugMode) return;
       const action = event.target?.dataset?.action;
       if (!action) return;
       if (action === 'spawn') {
@@ -49,10 +53,24 @@ export class DeskWorkspace {
     });
 
     window.addEventListener('keydown', (event) => {
+      if (!this.debugMode) return;
       if (event.key.toLowerCase() === 'p') this.spawner.spawnCasePacket();
       if (event.key.toLowerCase() === 'k') this.clear();
       if (event.key.toLowerCase() === 'o') this.toggleOverlays();
     });
+  }
+
+  setDebugMode(enabled) {
+    this.debugMode = Boolean(enabled);
+    this.applyDebugState();
+    if (!this.debugMode && this.showDataOverlays) {
+      this.showDataOverlays = false;
+      this.items.forEach((item) => item.updateOverlay?.());
+    }
+  }
+
+  applyDebugState() {
+    this.debugPanel?.classList.toggle('hidden', !this.debugMode);
   }
 
   bindRootEvents() {
@@ -119,6 +137,7 @@ export class DeskWorkspace {
   }
 
   toggleOverlays() {
+    if (!this.debugMode) return;
     this.showDataOverlays = !this.showDataOverlays;
     this.items.forEach((item) => item.updateOverlay?.());
   }

@@ -624,17 +624,67 @@ body {
 
 
 .terminal-screen {
-  background: #051807;
-  border: 1px solid #14a126;
-  color: #63ff84;
-  box-shadow: inset 0 0 0 1px rgba(99, 255, 132, 0.12), 0 0 22px rgba(20, 161, 38, 0.18);
+  position: relative;
+  background: radial-gradient(circle at 20% 0%, rgba(18, 66, 34, 0.45), transparent 40%), #031106;
+  border: 1px solid #1ea33d;
+  color: #7dffa1;
+  box-shadow: inset 0 0 0 1px rgba(125, 255, 161, 0.16), 0 0 24px rgba(30, 163, 61, 0.2);
   font-family: 'IBM Plex Mono', monospace;
+  text-shadow: 0 0 4px rgba(125, 255, 161, 0.15);
+  padding: 10px;
 }
 
-.terminal-screen h4,
+.terminal-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(150, 255, 180, 0.055),
+    rgba(150, 255, 180, 0.055) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+  opacity: 0.35;
+}
+
+.terminal-screen > * {
+  position: relative;
+  z-index: 1;
+}
+
+.terminal-screen h4 {
+  color: #9effb9;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+}
+
 .terminal-screen .label,
-.terminal-screen .no-flags {
-  color: #7eff99;
+.terminal-screen .no-flags,
+.terminal-screen .record-check-item,
+.terminal-screen .record-checkbox-item {
+  color: #84ffa8;
+}
+
+.terminal-screen .record-grid,
+.terminal-screen .record-checklist,
+.terminal-screen .system-flags {
+  border: 1px solid rgba(130, 255, 168, 0.2);
+  border-radius: 6px;
+  background: rgba(3, 22, 11, 0.55);
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.terminal-screen .record-check-status.provided {
+  color: #8dffb0;
+}
+
+.terminal-screen .record-check-status.missing {
+  color: #ffd37d;
 }
 
 .record-checkbox-list {
