@@ -384,7 +384,7 @@ export class UIRenderer {
 
     // System records in left pane (below request details)
     if (this.elements.queueDisplay) {
-      this.elements.queueDisplay.innerHTML = this.renderSystemRecords(data.caseRecord);
+      this.elements.queueDisplay.innerHTML = this.renderSystemRecords(data.caseRecord, data.conditions || []);
       this.bindRecordChecklist(data.caseRecord);
     }
 
@@ -470,17 +470,18 @@ export class UIRenderer {
         </div>
       ` : '';
 
-      this.elements.customerInfo.innerHTML = `
+      const missionHtml = this.game.developmentMode ? `
         <details class="mission-card" open>
-          <summary>Mission Briefing</summary>
+          <summary>Mission Briefing (Dev)</summary>
           <div class="mission-body">
             <p>Process a <strong>${requestName}</strong> request. Compare claims on paper with terminal truth and policy.</p>
             <p class="mission-secondary">Final authority comes from policy and on-file records, not customer claims.</p>
             <p><strong>Fee at stake:</strong> $${data.caseRecord.inputs.fee}</p>
           </div>
         </details>
-        ${devDiagnostics}
-      `;
+      ` : '';
+
+      this.elements.customerInfo.innerHTML = `${missionHtml}${devDiagnostics}`;
     }
   }
 
@@ -529,15 +530,10 @@ export class UIRenderer {
       .filter(entry => entry.doc && entry.doc.present);
 
     if (this.elements.documentTabs) {
-      const seated = this.currentServingData?.npc?.fullName || 'Customer';
-      const line = this.currentServingData?.greeting || '...';
       this.elements.documentTabs.innerHTML = `
         <div class="paperwork-header">
           <span class="paperwork-title">Desk Paperwork</span>
           <span class="paperwork-subtitle">Application + customer-submitted documents</span>
-        </div>
-        <div class="customer-across-desk">
-          <strong>${seated}</strong> sits across the desk: "${line}"
         </div>
       `;
     }
@@ -613,6 +609,10 @@ export class UIRenderer {
         const action = e.dataTransfer?.getData('text/stamp-action');
         if (action) this.applyStampDecision(action);
       });
+      appCard.addEventListener('click', () => {
+        const selected = document.querySelector('.stamp-token.dragging-stamp');
+        if (selected) this.applyStampDecision(selected.dataset.action);
+      });
     }
   }
 
@@ -625,9 +625,10 @@ export class UIRenderer {
     this.game.makeDecision(action, reason);
   }
 
-  renderSystemRecords(caseRecord) {
+  renderSystemRecords(caseRecord, conditions = []) {
     const npc = this.game.currentNPC;
     const flags = npc.flags;
+    const conditionRows = conditions.map(c => `<div class="record-check-item"><span>${c.type.replace(/_/g, ' ').toUpperCase()}</span><span class="record-check-status ${c.blocksApproval ? 'missing' : 'provided'}">${c.blocksApproval ? 'BLOCKING' : 'NOTICE'}</span></div>`).join('');
     const requiredDocs = caseRecord.inputs.requiredDocs || [];
     const providedDocs = Object.values(caseRecord.inputs.providedDocs || {}).filter(d => d.present).map(d => d.type);
 
@@ -679,6 +680,10 @@ export class UIRenderer {
           </div>
         </div>
         ${flagsHTML || '<p class="no-flags">No active flags on record.</p>'}
+        <div class="record-checklist">
+          <h4>Terminal Alerts</h4>
+          ${conditionRows || '<p class="no-flags">No special conditions.</p>'}
+        </div>
       </div>
     `;
   }
@@ -908,14 +913,18 @@ export class UIRenderer {
       `).join('') || '<p class="no-flags">No special conditions.</p>';
     }
 
+    const conditionsHtml = this.game.developmentMode ? `
+      <div class="conditions-panel">
+        <h3>Conditions & Alerts (Dev)</h3>
+        ${conditionsSection}
+      </div>
+    ` : '';
+
     this.elements.flagsPanel.innerHTML = `
       <div class="handbook-shelf">
         <button id="open-handbook-btn" class="manual-toggle" type="button">Open Employee Handbook</button>
       </div>
-      <div class="conditions-panel">
-        <h3>Conditions & Alerts</h3>
-        ${conditionsSection}
-      </div>
+      ${conditionsHtml}
     `;
 
     const openBtn = this.elements.flagsPanel.querySelector('#open-handbook-btn');
@@ -958,12 +967,18 @@ export class UIRenderer {
     }
 
     this.elements.decisionPanel?.querySelectorAll('.stamp-token').forEach(stamp => {
+      if (stamp.dataset.bound === 'true') return;
+      stamp.dataset.bound = 'true';
       stamp.addEventListener('dragstart', (e) => {
         stamp.classList.add('dragging-stamp');
         e.dataTransfer?.setData('text/stamp-action', stamp.dataset.action || '');
       });
       stamp.addEventListener('dragend', () => stamp.classList.remove('dragging-stamp'));
       stamp.addEventListener('pointerdown', () => {
+        document.querySelectorAll('.stamp-token').forEach(s => s.classList.remove('dragging-stamp'));
+        stamp.classList.add('dragging-stamp');
+      });
+      stamp.addEventListener('click', () => {
         document.querySelectorAll('.stamp-token').forEach(s => s.classList.remove('dragging-stamp'));
         stamp.classList.add('dragging-stamp');
       });
