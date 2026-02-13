@@ -242,11 +242,16 @@ export class UIRenderer {
     // Customer panel
     this.renderCustomer(data);
 
-    // Documents
+    // System records in left pane (below request details)
+    if (this.elements.queueDisplay) {
+      this.elements.queueDisplay.innerHTML = this.renderSystemRecords(data.caseRecord);
+    }
+
+    // Documents presented on desk
     this.renderDocuments(data.documents, data.caseRecord, data.issues);
 
-    // Flags
-    this.renderFlags(data.conditions, data.npc.flags);
+    // Right pane: employee manual + conditions
+    this.renderFlags(data.conditions, data.npc.flags, data.caseRecord);
 
     // Decision panel
     this.renderDecisionPanel(data);
@@ -349,93 +354,92 @@ export class UIRenderer {
 
   renderDocuments(documents, caseRecord, issues) {
     const requiredDocs = caseRecord.inputs.requiredDocs;
-    const tabs = [];
-    const contents = {};
 
-    // System Records tab
-    tabs.push({ id: 'system', label: 'System Records', icon: '&gt;_' });
-    contents['system'] = this.renderSystemRecords(caseRecord);
+    // Middle panel should represent paperwork physically provided by the NPC.
+    const providedDocs = requiredDocs
+      .map(docType => ({ docType, doc: documents[docType] }))
+      .filter(entry => entry.doc && entry.doc.present);
 
-    // Employee Manual tab
-    tabs.push({ id: 'manual', label: 'Employee Manual', icon: '&#128214;' });
-    contents.manual = this.renderEmployeeManual(caseRecord);
-
-    for (const docType of requiredDocs) {
-      const doc = documents[docType];
-      const docName = this.game.caseGenerator.formatDocName(docType);
-      const hasIssue = this.game.developmentMode && doc && (doc.errors.length > 0 || !doc.present || doc.expired);
-      tabs.push({
-        id: docType,
-        label: docName,
-        icon: doc?.present ? '&check;' : '&cross;',
-        hasIssue
-      });
-      contents[docType] = this.renderDocumentDetail(doc, docType, caseRecord);
-    }
-
-    // Render tabs
     if (this.elements.documentTabs) {
-      this.elements.documentTabs.innerHTML = tabs.map(t =>
-        `<button class="doc-tab ${t.hasIssue ? 'has-issue' : ''}" data-tab="${t.id}">
-          <span class="tab-icon">${t.icon}</span>
-          <span class="tab-label">${t.label}</span>
-        </button>`
-      ).join('');
-
-      // Bind tab clicks
-      this.elements.documentTabs.querySelectorAll('.doc-tab').forEach(btn => {
-        btn.addEventListener('click', () => {
-          this.currentDocTab = btn.dataset.tab;
-          this.elements.documentTabs.querySelectorAll('.doc-tab').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          this.elements.documentContent.innerHTML = contents[btn.dataset.tab];
-        });
-      });
-
-      // Show first tab
-      const firstTab = this.elements.documentTabs.querySelector('.doc-tab');
-      if (firstTab) {
-        firstTab.classList.add('active');
-        this.currentDocTab = firstTab.dataset.tab;
-        this.elements.documentContent.innerHTML = contents[firstTab.dataset.tab];
-      }
+      this.elements.documentTabs.innerHTML = `
+        <div class="paperwork-header">
+          <span class="paperwork-title">Desk Paperwork</span>
+          <span class="paperwork-subtitle">Documents physically submitted by applicant</span>
+        </div>
+      `;
     }
+
+    if (!this.elements.documentContent) return;
+
+    if (providedDocs.length === 0) {
+      this.elements.documentContent.innerHTML = `
+        <div class="paper-stack-empty">
+          <p>No documents were handed over at the desk.</p>
+          <p class="doc-subtle">Use the system records and employee manual to determine required paperwork.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const stackHtml = providedDocs.map(({ docType, doc }, index) => {
+      const tilt = ((index % 5) - 2) * 0.9;
+      return `
+        <article class="paper-sheet" style="--sheet-tilt:${tilt}deg; --sheet-layer:${index};">
+          ${this.renderDocumentDetail(doc, docType, caseRecord)}
+        </article>
+      `;
+    }).join('');
+
+    this.elements.documentContent.innerHTML = `<div class="paper-stack">${stackHtml}</div>`;
   }
 
   renderSystemRecords(caseRecord) {
     const npc = this.game.currentNPC;
     const flags = npc.flags;
+    const requiredDocs = caseRecord.inputs.requiredDocs || [];
+    const providedDocs = Object.values(caseRecord.inputs.providedDocs || {}).filter(d => d.present).map(d => d.type);
+
+    const checklistRows = requiredDocs.map(docType => {
+      const label = this.game.caseGenerator.formatDocName(docType);
+      const provided = providedDocs.includes(docType);
+      return `
+        <div class="record-check-item">
+          <span>${label}</span>
+          <span class="record-check-status ${provided ? 'provided' : 'missing'}">${provided ? 'Received' : 'Not Received'}</span>
+        </div>
+      `;
+    }).join('');
 
     let flagsHTML = '';
     if (flags.length > 0) {
       flagsHTML = `
-        <div class="system-flags">
+        <div class="system-flags compact-flags">
           <h4>Active Flags</h4>
           ${flags.map(f => `
             <div class="flag-item flag-${f.severity}">
               <span class="flag-icon">${f.severity === 'high' ? '!!!' : f.severity === 'med' ? '!!' : '!'}</span>
               <span class="flag-id">${f.flagId}</span>
-              <span class="flag-detail">${JSON.stringify(f.data)}</span>
             </div>
           `).join('')}
         </div>
       `;
-    } else {
-      flagsHTML = '<p class="no-flags">No active flags on record.</p>';
     }
 
     return `
-      <div class="system-records">
-        <h4>Citizen Record</h4>
+      <div class="system-records left-system-records">
+        <h4>System Records</h4>
         <div class="record-grid">
+          <div><span class="label">Request:</span> ${this.game.caseGenerator.formatRequestType(caseRecord.requestType)}</div>
           <div><span class="label">Name:</span> ${npc.fullName}</div>
           <div><span class="label">DOB:</span> ${npc.identity.dob}</div>
-          <div><span class="label">SSN:</span> ${npc.identity.ssnMasked}</div>
           <div><span class="label">Address:</span> ${npc.identity.address}</div>
-          <div><span class="label">Phone:</span> ${npc.identity.phone}</div>
           <div><span class="label">Prior Visits:</span> ${npc.caseHistory.length}</div>
         </div>
-        ${flagsHTML}
+        <div class="record-checklist">
+          <h4>Required Checklist</h4>
+          ${checklistRows || '<p class="no-flags">No required docs listed for this request.</p>'}
+        </div>
+        ${flagsHTML || '<p class="no-flags">No active flags on record.</p>'}
       </div>
     `;
   }
@@ -580,26 +584,34 @@ export class UIRenderer {
     `;
   }
 
-  renderFlags(conditions, flags) {
+  renderFlags(conditions, flags, caseRecord = null) {
     if (!this.elements.flagsPanel) return;
 
-    if (conditions.length === 0 && flags.length === 0) {
-      this.elements.flagsPanel.innerHTML = '<p class="no-flags">No special conditions.</p>';
-      return;
+    const manualSection = caseRecord
+      ? `<div class="manual-panel">${this.renderEmployeeManual(caseRecord)}</div>`
+      : '';
+
+    let conditionsSection = '<p class="no-flags">No special conditions.</p>';
+    if (conditions.length > 0 || flags.length > 0) {
+      conditionsSection = conditions.map(c => `
+        <div class="condition-item condition-${c.severity}">
+          <span class="condition-icon">${c.blocksApproval ? '&#128683;' : '&#9888;'}</span>
+          <div class="condition-detail">
+            <strong>${c.type.replace(/_/g, ' ').toUpperCase()}</strong>
+            <p>${c.detail}</p>
+            ${c.blocksApproval ? '<span class="blocks-badge">BLOCKS APPROVAL</span>' : ''}
+          </div>
+        </div>
+      `).join('') || '<p class="no-flags">No special conditions.</p>';
     }
 
-    const html = conditions.map(c => `
-      <div class="condition-item condition-${c.severity}">
-        <span class="condition-icon">${c.blocksApproval ? '&#128683;' : '&#9888;'}</span>
-        <div class="condition-detail">
-          <strong>${c.type.replace(/_/g, ' ').toUpperCase()}</strong>
-          <p>${c.detail}</p>
-          ${c.blocksApproval ? '<span class="blocks-badge">BLOCKS APPROVAL</span>' : ''}
-        </div>
+    this.elements.flagsPanel.innerHTML = `
+      ${manualSection}
+      <div class="conditions-panel">
+        <h3>Conditions & Alerts</h3>
+        ${conditionsSection}
       </div>
-    `).join('');
-
-    this.elements.flagsPanel.innerHTML = html;
+    `;
   }
 
   renderDecisionPanel(data) {
