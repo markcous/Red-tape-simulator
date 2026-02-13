@@ -208,6 +208,7 @@ export class UIRenderer {
           <p><strong>Time:</strong> ${data.time}</p>
           <p><strong>Customers in Queue:</strong> ${data.customerCount}</p>
           <p><strong>Supervisor:</strong> ${data.supervisorName}</p>
+          <p><strong>Pending Appeals:</strong> ${data.pendingAppeals ?? 0}</p>
           <p class="supervisor-type">${this.getSupervisorDescription(data.supervisorType)}</p>
         </div>
         <div class="shift-tips">
@@ -245,6 +246,7 @@ export class UIRenderer {
     // System records in left pane (below request details)
     if (this.elements.queueDisplay) {
       this.elements.queueDisplay.innerHTML = this.renderSystemRecords(data.caseRecord);
+      this.bindRecordChecklist(data.caseRecord);
     }
 
     // Documents presented on desk
@@ -327,12 +329,14 @@ export class UIRenderer {
       ` : '';
 
       this.elements.customerInfo.innerHTML = `
-        <div class="mission-card">
-          <h3>Mission</h3>
-          <p>${missionNarrative}</p>
-          <p class="mission-secondary">${contextNarrative}</p>
-          <p><strong>Fee at stake:</strong> $${data.caseRecord.inputs.fee}</p>
-        </div>
+        <details class="mission-card" open>
+          <summary>Mission Briefing</summary>
+          <div class="mission-body">
+            <p>${missionNarrative}</p>
+            <p class="mission-secondary">${contextNarrative}</p>
+            <p><strong>Fee at stake:</strong> $${data.caseRecord.inputs.fee}</p>
+          </div>
+        </details>
         ${devDiagnostics}
       `;
     }
@@ -421,17 +425,6 @@ export class UIRenderer {
     const requiredDocs = caseRecord.inputs.requiredDocs || [];
     const providedDocs = Object.values(caseRecord.inputs.providedDocs || {}).filter(d => d.present).map(d => d.type);
 
-    const checklistRows = requiredDocs.map(docType => {
-      const label = this.game.caseGenerator.formatDocName(docType);
-      const provided = providedDocs.includes(docType);
-      return `
-        <div class="record-check-item">
-          <span>${label}</span>
-          <span class="record-check-status ${provided ? 'provided' : 'missing'}">${provided ? 'Received' : 'Not Received'}</span>
-        </div>
-      `;
-    }).join('');
-
     let flagsHTML = '';
     if (flags.length > 0) {
       flagsHTML = `
@@ -447,27 +440,62 @@ export class UIRenderer {
       `;
     }
 
+    const checklistState = this.game.getChecklistState(caseRecord.caseId || caseRecord.caseRecord?.caseId || caseRecord.caseId);
+    const checklistBoxes = requiredDocs.map(docType => {
+      const checked = Boolean(checklistState[docType]);
+      return `
+        <label class="record-checkbox-item ${checked ? 'is-checked' : ''}">
+          <input type="checkbox" class="record-checkbox" data-case-id="${caseRecord.caseId}" data-doc-type="${docType}" ${checked ? 'checked' : ''}>
+          <span>${this.game.caseGenerator.formatDocName(docType)}</span>
+        </label>
+      `;
+    }).join('');
+
+    const devCounts = this.game.developmentMode ? `
+      <div class="record-grid dev-only-grid">
+        <div><span class="label">Required Docs:</span> ${requiredDocs.length}</div>
+        <div><span class="label">Submitted Docs:</span> ${providedDocs.length}</div>
+      </div>
+    ` : '';
+
     return `
-      <div class="system-records left-system-records">
+      <div class="system-records left-system-records terminal-screen">
         <h4>Records Queue Entry</h4>
         <div class="record-grid">
           <div><span class="label">Case Type:</span> ${this.game.caseGenerator.formatRequestType(caseRecord.requestType)}</div>
-          <div><span class="label">Required Docs:</span> ${requiredDocs.length}</div>
-          <div><span class="label">Submitted Docs:</span> ${providedDocs.length}</div>
           <div><span class="label">Prior Visits:</span> ${npc.caseHistory.length}</div>
         </div>
+        ${devCounts}
         <div class="record-checklist">
-          <h4>Required Checklist</h4>
-          ${checklistRows || '<p class="no-flags">No required docs listed for this request.</p>'}
+          <h4>Verification Checklist</h4>
+          <div class="record-checkbox-list">
+            ${checklistBoxes || '<p class="no-flags">No required docs listed for this request.</p>'}
+          </div>
         </div>
         ${flagsHTML || '<p class="no-flags">No active flags on record.</p>'}
       </div>
     `;
   }
 
+  bindRecordChecklist(caseRecord) {
+    const root = this.elements.queueDisplay;
+    if (!root || !caseRecord?.caseId) return;
+
+    root.querySelectorAll('.record-checkbox').forEach(input => {
+      input.addEventListener('change', () => {
+        this.game.toggleChecklistItem(caseRecord.caseId, input.dataset.docType, input.checked);
+        input.closest('.record-checkbox-item')?.classList.toggle('is-checked', input.checked);
+      });
+    });
+  }
+
   renderDocumentDetail(doc, docType, caseRecord = null) {
     if (!doc || !doc.present) {
       return this.renderMissingDocumentDetail(docType, caseRecord);
+    }
+
+    if (docType === 'driversLicense') {
+      return this.renderDriversLicenseCard(doc, caseRecord);
     }
 
     const docName = this.game.caseGenerator.formatDocName(docType);
@@ -527,7 +555,39 @@ export class UIRenderer {
           <span class="doc-status status-${statusClass}">${statusText}</span>
         </div>
         <div class="doc-fields">${dataEntries}</div>
+        ${doc.errors.includes('suspicious_seal') ? '<div class="tampered-seal">SEAL TAMPERED</div>' : ''}
         ${forgeryHints}
+      </div>
+    `;
+  }
+
+  renderDriversLicenseCard(doc, caseRecord = null) {
+    const showHints = this.game.developmentMode;
+    const holder = doc.data?.holderName || this.game.currentNPC?.fullName || 'Unknown';
+    const seed = encodeURIComponent(`${holder}-${doc.data?.licenseNumber || 'dl'}`);
+    const photoUrl = `https://api.dicebear.com/9.x/adventurer/svg?seed=${seed}`;
+    const statusText = showHints && doc.expired ? 'EXPIRED' : 'ON FILE';
+    const statusClass = showHints && doc.expired ? 'status-expired' : 'status-received';
+
+    return `
+      <div class="doc-detail doc-drivers-license">
+        <div class="license-topbar">
+          <span>STATE DMV LICENSE</span>
+          <span class="doc-status ${statusClass}">${statusText}</span>
+        </div>
+        <div class="license-body">
+          <div class="license-photo"><img src="${photoUrl}" alt="License photo"></div>
+          <div class="license-fields">
+            <div><span>NAME</span><strong>${holder}</strong></div>
+            <div><span>DOB</span><strong>${doc.data?.dob || 'N/A'}</strong></div>
+            <div><span>ADDRESS</span><strong>${doc.data?.address || 'N/A'}</strong></div>
+            <div><span>LIC #</span><strong>${doc.data?.licenseNumber || 'N/A'}</strong></div>
+            <div><span>CLASS</span><strong>${doc.data?.category || 'N/A'}</strong></div>
+            <div><span>EXP</span><strong>${doc.data?.expirationDate || 'N/A'}</strong></div>
+          </div>
+          <div class="license-seal ${doc.errors.includes('suspicious_seal') ? 'tampered' : ''}">DMV OFFICIAL SEAL</div>
+        </div>
+        ${doc.errors.includes('suspicious_seal') ? '<div class="tampered-seal">SEAL TAMPERED</div>' : ''}
       </div>
     `;
   }
@@ -579,9 +639,11 @@ export class UIRenderer {
       </ul>
     `;
 
-    const currentDocs = currentRequired.length > 0
-      ? `<p><strong>Current case requires:</strong> ${currentRequired.map(d => this.game.caseGenerator.formatDocName(d)).join(', ')}.</p>`
-      : '<p><strong>Current case requires:</strong> No supporting documents.</p>';
+    const currentDocs = this.game.developmentMode
+      ? (currentRequired.length > 0
+        ? `<p><strong>Current case requires:</strong> ${currentRequired.map(d => this.game.caseGenerator.formatDocName(d)).join(', ')}.</p>`
+        : '<p><strong>Current case requires:</strong> No supporting documents.</p>')
+      : ''; 
 
     return `
       <div class="system-records employee-manual">
@@ -608,8 +670,12 @@ export class UIRenderer {
   renderFlags(conditions, flags, caseRecord = null) {
     if (!this.elements.flagsPanel) return;
 
+    const isOpen = this.game.gameState.manualOpen;
     const manualSection = caseRecord
-      ? `<div class="manual-panel">${this.renderEmployeeManual(caseRecord)}</div>`
+      ? `<div class="manual-panel ${isOpen ? 'open' : 'closed'}">
+          <button class="manual-toggle" type="button" id="manual-toggle-btn">${isOpen ? 'Close Manual' : 'Open Manual'}</button>
+          ${isOpen ? this.renderEmployeeManual(caseRecord) : '<div class="manual-book-cover">Employee Manual (closed)</div>'}
+        </div>`
       : '';
 
     let conditionsSection = '<p class="no-flags">No special conditions.</p>';
@@ -633,6 +699,14 @@ export class UIRenderer {
         ${conditionsSection}
       </div>
     `;
+
+    const toggleBtn = this.elements.flagsPanel.querySelector('#manual-toggle-btn');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        this.game.setManualOpen(!this.game.gameState.manualOpen);
+        this.renderFlags(conditions, flags, caseRecord);
+      });
+    }
   }
 
   renderDecisionPanel(data) {
@@ -759,6 +833,23 @@ export class UIRenderer {
       `;
     }
 
+    const compliance = data.complianceReport || null;
+    let complianceHTML = '';
+    if (compliance) {
+      complianceHTML = `
+        <div class="review-details">
+          <h3>Audit & Appeals</h3>
+          <div class="detail-grid">
+            <div class="detail-item">Audited Cases: ${compliance.audited}</div>
+            <div class="detail-item">Violations: ${compliance.violations}</div>
+            <div class="detail-item">Cleared: ${compliance.cleared}</div>
+            <div class="detail-item">New Appeals: ${compliance.newAppeals}</div>
+            <div class="detail-item">Pending Appeals: ${compliance.pendingAppeals}</div>
+          </div>
+        </div>
+      `;
+    }
+
     const gradeColors = { S: '#FFD700', A: '#4CAF50', B: '#2196F3', C: '#FF9800', D: '#f44336', F: '#9C27B0' };
 
     this.elements.reviewContent.innerHTML = `
@@ -796,6 +887,8 @@ export class UIRenderer {
         </div>
 
         ${eventsHTML}
+
+        ${complianceHTML}
 
         <div class="consequences-section">
           <h3>Outcomes</h3>

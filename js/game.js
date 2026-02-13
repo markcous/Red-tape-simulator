@@ -41,7 +41,11 @@ export class Game {
       eventLog: [],
       eventCounter: 0,
       seed: Date.now(),
-      developmentMode: false
+      developmentMode: false,
+      caseChecklist: {},
+      manualOpen: true,
+      pendingAppeals: [],
+      auditHistory: []
     };
 
     this.runRng = new SeededRNG(this.gameState.seed);
@@ -103,6 +107,68 @@ export class Game {
       type: 'devMode',
       enabled: this.gameState.developmentMode
     });
+  }
+
+  setManualOpen(isOpen) {
+    this.gameState.manualOpen = Boolean(isOpen);
+  }
+
+  toggleChecklistItem(caseId, docType, checked) {
+    if (!caseId || !docType) return;
+    if (!this.gameState.caseChecklist[caseId]) this.gameState.caseChecklist[caseId] = {};
+    this.gameState.caseChecklist[caseId][docType] = Boolean(checked);
+  }
+
+  getChecklistState(caseId) {
+    return this.gameState.caseChecklist[caseId] || {};
+  }
+
+  runAuditAndAppeals() {
+    const currentShift = this.player?.shiftNumber || 0;
+    const cases = this.gameState.eventLog.filter(e => e.shift === currentShift && e.type === 'CASE_RESOLVED');
+    const sampleSize = Math.min(cases.length, Math.max(1, Math.floor(cases.length * 0.35)));
+    const sampled = this.runRng.shuffle(cases).slice(0, sampleSize);
+
+    const auditFindings = sampled.map(event => ({
+      caseId: event.payload.caseId,
+      result: event.payload.correct ? 'cleared' : 'violation',
+      decision: event.payload.decision?.action || 'Unknown'
+    }));
+
+    const violations = auditFindings.filter(f => f.result === 'violation').length;
+    if (violations > 0) {
+      this.player.writeUps += violations;
+      this.player.totalWriteUps += violations;
+    }
+
+    const appealsFromShift = cases
+      .filter(e => e.payload.decision?.action === 'Deny' && this.runRng.chance(0.4))
+      .slice(0, 3)
+      .map(e => ({
+        caseId: e.payload.caseId,
+        npcId: e.payload.npcId,
+        filedAtShift: currentShift,
+        status: 'pending'
+      }));
+
+    this.gameState.pendingAppeals.push(...appealsFromShift);
+    if (this.gameState.pendingAppeals.length > 30) {
+      this.gameState.pendingAppeals = this.gameState.pendingAppeals.slice(-30);
+    }
+
+    const complianceReport = {
+      audited: sampled.length,
+      violations,
+      cleared: sampled.length - violations,
+      newAppeals: appealsFromShift.length,
+      pendingAppeals: this.gameState.pendingAppeals.length,
+      findings: auditFindings.slice(0, 5)
+    };
+
+    this.gameState.auditHistory.push({ shift: currentShift, ...complianceReport });
+    if (this.gameState.auditHistory.length > 20) this.gameState.auditHistory.shift();
+
+    return complianceReport;
   }
 
   setSeed(seed) {
@@ -191,6 +257,7 @@ export class Game {
       customerCount,
       supervisorName: this.supervisor.name,
       supervisorType: this.supervisor.type,
+      pendingAppeals: this.gameState.pendingAppeals.length,
       time: this.shiftManager.getTimeString()
     });
   }
@@ -225,6 +292,7 @@ export class Game {
     );
 
     this.currentCase = caseData;
+    this.gameState.caseChecklist[caseData.caseRecord.caseId] = this.gameState.caseChecklist[caseData.caseRecord.caseId] || Object.fromEntries((caseData.caseRecord.inputs.requiredDocs || []).map(d => [d, false]));
 
     // Advance time
     this.shiftManager.advanceTime(
@@ -407,6 +475,7 @@ export class Game {
     const review = this.supervisor.generateShiftReview(this.player);
     const shiftSummary = this.shiftManager.getShiftSummary();
     const newAchievements = this.player.checkAchievements();
+    const complianceReport = this.runAuditAndAppeals();
 
     this.state = GamePhase.REVIEW;
     this.logEvent('SHIFT_COMPLETED', {
@@ -420,6 +489,7 @@ export class Game {
       review,
       shiftSummary,
       newAchievements,
+      complianceReport,
       playerStats: {
         money: this.player.money,
         shiftsCompleted: this.player.shiftsCompleted,
@@ -442,7 +512,11 @@ export class Game {
         seed: this.gameState.seed,
         eventLog: this.gameState.eventLog,
         eventCounter: this.gameState.eventCounter,
-        developmentMode: this.gameState.developmentMode
+        developmentMode: this.gameState.developmentMode,
+        caseChecklist: this.gameState.caseChecklist,
+        manualOpen: this.gameState.manualOpen,
+        pendingAppeals: this.gameState.pendingAppeals,
+        auditHistory: this.gameState.auditHistory
       },
       version: 1
     };
@@ -466,6 +540,10 @@ export class Game {
             this.gameState.eventLog = save.gameState.eventLog || [];
             this.gameState.eventCounter = save.gameState.eventCounter || 0;
             this.gameState.developmentMode = Boolean(save.gameState.developmentMode);
+            this.gameState.caseChecklist = save.gameState.caseChecklist || {};
+            this.gameState.manualOpen = save.gameState.manualOpen !== false;
+            this.gameState.pendingAppeals = save.gameState.pendingAppeals || [];
+            this.gameState.auditHistory = save.gameState.auditHistory || [];
           }
           // NPC pool would need proper NPC.fromJSON reconstruction
           return true;
@@ -487,6 +565,10 @@ export class Game {
     this.gameState.eventLog = [];
     this.gameState.eventCounter = 0;
     this.gameState.developmentMode = false;
+    this.gameState.caseChecklist = {};
+    this.gameState.manualOpen = true;
+    this.gameState.pendingAppeals = [];
+    this.gameState.auditHistory = [];
     this.state = GamePhase.MENU;
     this.emit('stateChange', { state: this.state });
   }
@@ -496,6 +578,8 @@ export class Game {
       state: this.state,
       seed: this.gameState.seed,
       developmentMode: this.gameState.developmentMode,
+      manualOpen: this.gameState.manualOpen,
+      pendingAppeals: this.gameState.pendingAppeals,
       eventLog: this.gameState.eventLog,
       player: this.player,
       shiftNumber: this.player.shiftNumber,

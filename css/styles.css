@@ -556,17 +556,23 @@ body {
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent-gold);
   border-radius: var(--radius);
-  padding: 12px 14px;
-  display: grid;
-  gap: 8px;
+  padding: 10px 12px;
   font-size: 0.86rem;
 }
 
-.mission-card h3 {
-  font-size: 0.8rem;
-  color: var(--accent-gold);
+.mission-card summary {
+  cursor: pointer;
+  font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.9px;
+  color: var(--accent-gold);
+  font-weight: 700;
+}
+
+.mission-body {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
 }
 
 .mission-secondary {
@@ -614,6 +620,50 @@ body {
   border-top: 1px solid var(--border);
   max-height: 48vh;
   overflow-y: auto;
+}
+
+
+.terminal-screen {
+  background: #051807;
+  border: 1px solid #14a126;
+  color: #63ff84;
+  box-shadow: inset 0 0 0 1px rgba(99, 255, 132, 0.12), 0 0 22px rgba(20, 161, 38, 0.18);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.terminal-screen h4,
+.terminal-screen .label,
+.terminal-screen .no-flags {
+  color: #7eff99;
+}
+
+.record-checkbox-list {
+  display: grid;
+  gap: 6px;
+}
+
+.record-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.76rem;
+  padding: 4px 0;
+}
+
+.record-checkbox-item input {
+  accent-color: #6dff8b;
+}
+
+.record-checkbox-item.is-checked span {
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+
+.dev-only-grid {
+  opacity: 0.7;
+  border: 1px dashed rgba(126, 255, 153, 0.35);
+  padding: 8px;
+  border-radius: 4px;
 }
 
 /* ============================================
@@ -699,6 +749,88 @@ body {
   box-shadow: var(--shadow);
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.85rem;
+}
+
+
+.doc-drivers-license {
+  background: linear-gradient(145deg, #d8e5f5, #edf4fb);
+  border: 1px solid #9db2cc;
+}
+
+.license-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  color: #19395a;
+  margin-bottom: 10px;
+}
+
+.license-body {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 12px;
+  position: relative;
+}
+
+.license-photo {
+  border: 1px solid #7f96b3;
+  background: #fff;
+  height: 108px;
+  overflow: hidden;
+}
+
+.license-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.license-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  font-size: 0.72rem;
+}
+
+.license-fields span {
+  display: block;
+  color: #335b7e;
+  font-size: 0.63rem;
+}
+
+.license-fields strong {
+  color: #1b2f43;
+  font-size: 0.76rem;
+}
+
+.license-seal {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  border: 2px solid #5a7898;
+  color: #4b6784;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 0.58rem;
+  letter-spacing: 0.5px;
+  transform: rotate(-12deg);
+}
+
+.license-seal.tampered {
+  border-color: #b64646;
+  color: #b64646;
+  box-shadow: 0 0 0 2px rgba(182, 70, 70, 0.2);
+}
+
+.tampered-seal {
+  margin-top: 10px;
+  display: inline-block;
+  border: 2px dashed #b71c1c;
+  color: #b71c1c;
+  padding: 4px 10px;
+  font-weight: 700;
+  transform: rotate(-7deg);
 }
 
 .doc-header {
@@ -974,6 +1106,46 @@ body {
 
 .manual-panel {
   margin-bottom: 14px;
+}
+
+
+.manual-toggle {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid #8b6a3d;
+  background: linear-gradient(180deg, #caa36d, #9f7a46);
+  color: #2e1e10;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.manual-panel.open .system-records {
+  background: #f0e4cd;
+  color: #2e2012;
+  border: 1px solid #967347;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+
+.manual-panel.open .system-records h4,
+.manual-panel.open .system-records h5,
+.manual-panel.open .system-records p,
+.manual-panel.open .system-records li,
+.manual-panel.open .system-records th,
+.manual-panel.open .system-records td {
+  color: #2f2113;
+}
+
+.manual-book-cover {
+  border: 1px solid #8b6a3d;
+  border-radius: 8px;
+  background: repeating-linear-gradient(90deg, #8f693c 0, #8f693c 10px, #7f5a30 10px, #7f5a30 20px);
+  color: #f3e7d3;
+  padding: 14px;
+  font-family: 'IBM Plex Mono', monospace;
+  text-align: center;
 }
 
 .manual-panel .system-records {
