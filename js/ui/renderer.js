@@ -413,7 +413,9 @@ export class UIRenderer {
       this.elements.deskCustomerAvatar.innerHTML = `<span>${initials}</span>`;
     }
     if (this.elements.deskCustomerChat) {
-      this.elements.deskCustomerChat.innerHTML = `<p>"${data.greeting}"</p>`;
+      const acrossDeskLine = data.greeting || data.npc?.dialogue?.greeting || data.npc?.dialogue?.smallTalk ||
+        `I'm here for ${this.game.caseGenerator.formatRequestType(data.caseRecord?.requestType || 'service')}.`;
+      this.elements.deskCustomerChat.innerHTML = `<p>"${acrossDeskLine}"</p>`;
     }
   }
 
@@ -526,8 +528,8 @@ export class UIRenderer {
 
   renderDocuments(documents, caseRecord, issues) {
     const requiredDocs = caseRecord.inputs.requiredDocs || [];
-    const providedDocs = requiredDocs
-      .map(docType => ({ docType, doc: documents[docType] }))
+    const providedDocs = Object.entries(documents || {})
+      .map(([docType, doc]) => ({ docType, doc }))
       .filter(entry => entry.doc && entry.doc.present);
 
     if (this.elements.documentTabs) {
@@ -546,6 +548,36 @@ export class UIRenderer {
     const packet = this.buildWorkspacePacket(caseRecord, providedDocs, issues);
     this.deskWorkspace.clear();
     packet.forEach((docConfig) => this.deskWorkspace.addItem(new DeskDocument(this.deskWorkspace, docConfig)));
+    this.renderMissingDocRequests(requiredDocs, providedDocs.map(d => d.docType));
+  }
+
+
+  renderMissingDocRequests(requiredDocs = [], providedDocTypes = []) {
+    if (!this.elements.decisionPanel) return;
+
+    const existing = this.elements.decisionPanel.querySelector('.doc-request-tray');
+    if (existing) existing.remove();
+
+    const missing = requiredDocs.filter((docType) => !providedDocTypes.includes(docType));
+    if (!missing.length) return;
+
+    const requestHtml = missing.map((docType) =>
+      `<button class="doc-request-btn" type="button" data-doc-type="${docType}">Request ${this.game.caseGenerator.formatDocName(docType)}</button>`
+    ).join('');
+
+    this.elements.decisionPanel.insertAdjacentHTML('beforeend', `
+      <div class="doc-request-tray">
+        <h4>Request Additional Documents</h4>
+        <div class="doc-request-list">${requestHtml}</div>
+      </div>
+    `);
+
+    this.elements.decisionPanel.querySelectorAll('.doc-request-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const name = this.game.caseGenerator.formatDocName(btn.dataset.docType || 'Document');
+        this.showNotification(`${name} requested from customer at window.`);
+      });
+    });
   }
 
   ensureDeskWorkspace() {

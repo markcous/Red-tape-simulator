@@ -2135,3 +2135,76 @@ body {
 .right-panel {
   position: relative;
 }
+
+/* Fit desk papers directly on desk (remove framed viewport feel) */
+#document-content {
+  overflow: visible;
+  padding: 8px 12px 0;
+}
+
+.workspace-surface,
+.workspace-stack {
+  overflow: visible;
+  min-height: calc(100vh - 180px);
+  border-radius: 0;
+}
+
+.workspace-stack {
+  background: transparent;
+}
+
+.workspace-document {
+  background: transparent;
+}
+
+.workspace-document .doc-detail {
+  width: 100%;
+}
+
+#customer-desk-strip {
+  z-index: 60;
+  min-height: 68px;
+}
+
+#desk-customer-chat {
+  color: #f0f4f8;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+}
+
+#desk-customer-chat p {
+  margin: 0;
+}
+
+.doc-request-tray {
+  pointer-events: auto;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(20, 16, 12, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.doc-request-tray h4 {
+  margin: 0 0 8px;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.doc-request-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.doc-request-btn {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5efe2;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  padding: 6px 10px;
+  cursor: pointer;
+}
