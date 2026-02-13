@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Desk Workspace Demo</title>
+  <link rel="stylesheet" href="../../../css/styles.css" />
+  <style>body{background:#1c2025;padding:16px} #demo-root{height:78vh;max-width:1100px;margin:auto;border:1px solid #444;}</style>
+</head>
+<body>
+  <div id="demo-root"></div>
+  <script type="module">
+    import { DeskWorkspace } from '../Scripts/desk-workspace.js';
+    const root = document.getElementById('demo-root');
+    const workspace = new DeskWorkspace({ root, seed: 1337 });
+    workspace.spawner.spawnCasePacket();
+  </script>
+</body>
+</html>

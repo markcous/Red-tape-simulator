@@ -1886,3 +1886,94 @@ body {
 @media (min-aspect-ratio: 16/9) {
   .paper-sheet { width: min(34vw, 390px); }
 }
+
+/* Desk Workspace subsystem */
+.workspace-surface {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 470px;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.workspace-stack {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  perspective: 1400px;
+}
+
+.workspace-document,
+.desk-item {
+  position: absolute;
+  cursor: grab;
+  user-select: none;
+  transform-origin: center center;
+  transition: box-shadow 90ms ease, filter 150ms ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.desk-item.held {
+  cursor: grabbing;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  filter: brightness(1.02);
+  margin-top: -6px;
+}
+
+.workspace-document::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--doc-wear-url, none);
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+.workspace-overlay {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  font-size: 11px;
+  line-height: 1.2;
+  background: rgba(0, 0, 0, 0.58);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+.workspace-debug-panel {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(9, 16, 26, 0.82);
+  backdrop-filter: blur(2px);
+}
+
+.workspace-debug-panel label {
+  color: #d4dde8;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workspace-debug-panel input {
+  width: 84px;
+}
+
+.workspace-debug-panel button {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}

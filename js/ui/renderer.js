@@ -1,3 +1,6 @@
+import { DeskWorkspace } from '../../UI/DeskWorkspace/Scripts/desk-workspace.js';
+import { DeskDocument } from '../../UI/DeskWorkspace/Scripts/desk-document.js';
+
 export class UIRenderer {
   constructor(game) {
     this.game = game;
@@ -522,16 +525,14 @@ export class UIRenderer {
   }
 
   renderDocuments(documents, caseRecord, issues) {
-    const requiredDocs = caseRecord.inputs.requiredDocs;
-
-    // Middle panel should represent paperwork physically provided by the NPC.
+    const requiredDocs = caseRecord.inputs.requiredDocs || [];
     const providedDocs = requiredDocs
       .map(docType => ({ docType, doc: documents[docType] }))
       .filter(entry => entry.doc && entry.doc.present);
 
     if (this.elements.documentTabs) {
       this.elements.documentTabs.innerHTML = `
-        <div class="paperwork-header">
+        <div class="paperwork-header"> 
           <span class="paperwork-title">Desk Paperwork</span>
           <span class="paperwork-subtitle">Application + customer-submitted documents</span>
         </div>
@@ -539,32 +540,96 @@ export class UIRenderer {
     }
 
     if (!this.elements.documentContent) return;
+    this.ensureDeskWorkspace();
 
-    if (providedDocs.length === 0) {
-      this.elements.documentContent.innerHTML = `
-        <div class="desk-surface">
-          <div class="paper-stack-empty">
-            <p>No documents were handed over at the desk.</p>
-            <p class="doc-subtle">Use the system records and employee manual to determine required paperwork.</p>
-          </div>
-        </div>
-      `;
-      return;
-    }
+    const packet = this.buildWorkspacePacket(caseRecord, providedDocs, issues);
+    this.deskWorkspace.clear();
+    packet.forEach((docConfig) => this.deskWorkspace.addItem(new DeskDocument(this.deskWorkspace, docConfig)));
+  }
 
-    const applicationSheet = `<article class="paper-sheet application-sheet draggable-paper" data-paper-id="application" data-dropzone="application" style="--sheet-tilt:-1.2deg; --sheet-layer:0; left:14%; top:12%;">${this.renderApplicationForm(caseRecord)}</article>`;
+  ensureDeskWorkspace() {
+    if (this.deskWorkspace || !this.elements.documentContent) return;
+    this.deskWorkspace = new DeskWorkspace({
+      root: this.elements.documentContent,
+      onStamp: (action) => this.applyStampDecision(action),
+      seed: 1337
+    });
+  }
 
-    const stackHtml = applicationSheet + providedDocs.map(({ docType, doc }, index) => {
-      const tilt = ((index % 5) - 2) * 0.9;
-      return `
-        <article class="paper-sheet doc-sheet doc-${docType} draggable-paper" data-paper-id="${docType}-${index}" style="--sheet-tilt:${tilt}deg; --sheet-layer:${index + 1}; left:${18 + ((index * 9) % 45)}%; top:${18 + ((index * 8) % 38)}%;">
-          ${this.renderDocumentDetail(doc, docType, caseRecord)}
-        </article>
-      `;
-    }).join('');
+  buildWorkspacePacket(caseRecord, providedDocs, issues = []) {
+    const npc = this.game.currentNPC;
+    const basePerson = {
+      name: npc?.fullName || 'Unknown',
+      dob: npc?.identity?.dob || '',
+      address: npc?.identity?.address || ''
+    };
 
-    this.elements.documentContent.innerHTML = `<div class="desk-surface"><div class="paper-stack">${stackHtml}</div></div>`;
-    this.bindDraggablePapers();
+    const vehicleFromData = (doc) => ({
+      vin: doc?.data?.vin || doc?.data?.vehicleVIN || doc?.data?.vehicleId || '',
+      make: doc?.data?.make || doc?.data?.vehicleMake || '',
+      model: doc?.data?.model || doc?.data?.vehicleModel || '',
+      year: doc?.data?.year || doc?.data?.vehicleYear || ''
+    });
+
+    const policyFromData = (doc) => ({
+      policyNumber: doc?.data?.policyNumber || doc?.data?.licenseNumber || '',
+      provider: doc?.data?.provider || doc?.data?.insuranceProvider || 'N/A',
+      expDate: doc?.data?.expirationDate || doc?.data?.expDate || ''
+    });
+
+    const packet = [{
+      id: 'application',
+      template: 'title',
+      sizePreset: 'Letter',
+      stampTarget: true,
+      x: 90,
+      y: 28,
+      rotation: this.deskWorkspace.randomBetween(-2, 2),
+      data: {
+        person: basePerson,
+        vehicle: { vin: 'APPLICATION FILE', make: this.game.caseGenerator.formatRequestType(caseRecord.requestType), model: '', year: '' },
+        policy: { policyNumber: `FEE-$${caseRecord.inputs.fee || 0}`, provider: 'DMV', expDate: '' },
+        dateValue: this.game.getDisplayTime()
+      }
+    }];
+
+    const templateMap = {
+      title: 'title',
+      vehicleTitle: 'title',
+      billOfSale: 'billOfSale',
+      insuranceCard: 'insuranceCard',
+      utilityBill: 'utilityBill',
+      driversLicense: 'driversLicense'
+    };
+
+    providedDocs.forEach(({ docType, doc }, index) => {
+      const template = templateMap[docType] || this.pickFallbackTemplate(index);
+      packet.push({
+        id: `${docType}-${index}`,
+        template,
+        sizePreset: template === 'driversLicense' || template === 'insuranceCard' ? 'WalletCard' : (template === 'utilityBill' ? 'HalfSheet' : 'Letter'),
+        x: 150 + ((index * 95) % 430),
+        y: 92 + ((index * 70) % 280),
+        rotation: this.deskWorkspace.randomBetween(-3, 3),
+        data: {
+          person: {
+            name: doc?.data?.holderName || doc?.data?.fullName || basePerson.name,
+            dob: doc?.data?.dob || basePerson.dob,
+            address: doc?.data?.address || basePerson.address
+          },
+          vehicle: vehicleFromData(doc),
+          policy: policyFromData(doc),
+          dateValue: doc?.data?.dateIssued || doc?.data?.issueDate || doc?.data?.expirationDate || ''
+        }
+      });
+    });
+
+    return packet;
+  }
+
+  pickFallbackTemplate(index) {
+    const templates = ['title', 'billOfSale', 'insuranceCard', 'utilityBill', 'driversLicense'];
+    return templates[index % templates.length];
   }
 
   bindDraggablePapers() {
