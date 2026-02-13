@@ -3,6 +3,9 @@ export class UIRenderer {
     this.game = game;
     this.elements = {};
     this.currentDocTab = null;
+    this.handbookPageIndex = 0;
+    this.handbookPages = [];
+    this.paperDragZ = 250;
   }
 
   init() {
@@ -90,7 +93,14 @@ export class UIRenderer {
       // Handbook overlay (created dynamically if missing)
       handbookOverlay: document.getElementById('handbook-overlay'),
       handbookContent: document.getElementById('handbook-content'),
-      closeHandbookBtn: document.getElementById('close-handbook-btn')
+      closeHandbookBtn: document.getElementById('close-handbook-btn'),
+      handbookPrevBtn: document.getElementById('handbook-prev-btn'),
+      handbookNextBtn: document.getElementById('handbook-next-btn'),
+      handbookPageIndicator: document.getElementById('handbook-page-indicator'),
+
+      // Across-desk customer strip
+      deskCustomerAvatar: document.getElementById('desk-customer-avatar'),
+      deskCustomerChat: document.getElementById('desk-customer-chat')
     };
   }
 
@@ -123,6 +133,9 @@ export class UIRenderer {
     this.elements.handbookOverlay?.addEventListener('click', (e) => {
       if (e.target === this.elements.handbookOverlay) this.closeHandbook();
     });
+
+    this.elements.handbookPrevBtn?.addEventListener('click', () => this.turnHandbookPage(-1));
+    this.elements.handbookNextBtn?.addEventListener('click', () => this.turnHandbookPage(1));
   }
 
   ensureHandbookOverlay() {
@@ -133,7 +146,14 @@ export class UIRenderer {
     overlay.className = 'hidden';
     overlay.innerHTML = `
       <div class="handbook-shell">
-        <button id="close-handbook-btn" class="btn btn-sm">Close Handbook</button>
+        <div class="handbook-toolbar">
+          <button id="close-handbook-btn" class="btn btn-sm">Close Handbook</button>
+          <div class="handbook-nav">
+            <button id="handbook-prev-btn" class="btn btn-sm">&#9664; Prev</button>
+            <span id="handbook-page-indicator">Page 1/1</span>
+            <button id="handbook-next-btn" class="btn btn-sm">Next &#9654;</button>
+          </div>
+        </div>
         <div id="handbook-content"></div>
       </div>
     `;
@@ -142,16 +162,94 @@ export class UIRenderer {
     this.elements.handbookOverlay = overlay;
     this.elements.handbookContent = overlay.querySelector('#handbook-content');
     this.elements.closeHandbookBtn = overlay.querySelector('#close-handbook-btn');
+    this.elements.handbookPrevBtn = overlay.querySelector('#handbook-prev-btn');
+    this.elements.handbookNextBtn = overlay.querySelector('#handbook-next-btn');
+    this.elements.handbookPageIndicator = overlay.querySelector('#handbook-page-indicator');
   }
 
   openHandbook(caseRecord) {
-    if (!this.elements.handbookOverlay || !this.elements.handbookContent || !caseRecord) return;
-    this.elements.handbookContent.innerHTML = this.renderEmployeeManual(caseRecord);
+    if (!this.elements.handbookOverlay || !caseRecord) return;
+    this.handbookPages = this.getHandbookPages(caseRecord);
+    this.handbookPageIndex = 0;
+    this.renderHandbookPage();
     this.elements.handbookOverlay.classList.remove('hidden');
   }
 
   closeHandbook() {
     this.elements.handbookOverlay?.classList.add('hidden');
+  }
+
+  turnHandbookPage(direction) {
+    if (!this.handbookPages.length) return;
+    const next = this.handbookPageIndex + direction;
+    if (next < 0 || next >= this.handbookPages.length) return;
+    this.handbookPageIndex = next;
+    this.renderHandbookPage();
+  }
+
+  getHandbookPages(caseRecord) {
+    const dept = this.game.player.department;
+    const deptConfig = this.game.catalogs.departments[dept];
+    const requestType = caseRecord.requestType;
+    const requestRows = Object.entries(deptConfig.requiredDocsByRequest).map(([type, docs]) =>
+      `<tr><td>${this.game.caseGenerator.formatRequestType(type)}</td><td>${docs.map(d => this.game.caseGenerator.formatDocName(d)).join(', ')}</td><td>$${deptConfig.fees[type] ?? 0}</td></tr>`
+    ).join('');
+
+    return [
+      {
+        title: 'General Policy',
+        body: `
+          <div class="system-records employee-manual">
+            <h4>Employee Manual — ${dept}</h4>
+            <p><strong>Current request:</strong> ${this.game.caseGenerator.formatRequestType(requestType)}</p>
+            <h5>Disposition rules</h5>
+            <ul>
+              <li>Deny if any required document is missing.</li>
+              <li>Deny if any required document is expired.</li>
+              <li>Deny if authenticity cannot be verified.</li>
+              <li>Escalate when policy is ambiguous or special handling applies.</li>
+              <li>Approve only when required materials are complete and valid.</li>
+            </ul>
+          </div>`
+      },
+      {
+        title: 'Required Documents',
+        body: `
+          <div class="system-records employee-manual">
+            <h4>Required Documents by Request Type</h4>
+            <div class="manual-table-wrap"><table class="manual-table"><thead><tr><th>Request Type</th><th>Required Docs</th><th>Fee</th></tr></thead><tbody>${requestRows}</tbody></table></div>
+          </div>`
+      },
+      {
+        title: 'Fraud & Exception Handling',
+        body: `
+          <div class="system-records employee-manual">
+            <h4>Fraud & Exceptions</h4>
+            <ul>
+              <li>Seal or print anomalies require denial or escalation.</li>
+              <li>Mismatch with terminal records is treated as high risk.</li>
+              <li>Outstanding blocking conditions supersede submitted documents.</li>
+              <li>Document your reason code before stamping.</li>
+            </ul>
+          </div>`
+      }
+    ];
+  }
+
+  renderHandbookPage() {
+    if (!this.elements.handbookContent) return;
+    if (!this.handbookPages.length) {
+      this.elements.handbookContent.innerHTML = '<p>No handbook pages available.</p>';
+      return;
+    }
+
+    const page = this.handbookPages[this.handbookPageIndex];
+    this.elements.handbookContent.innerHTML = `<div class="handbook-page"><h3>${page.title}</h3>${page.body}</div>`;
+    if (this.elements.handbookPageIndicator) {
+      this.elements.handbookPageIndicator.textContent = `Page ${this.handbookPageIndex + 1}/${this.handbookPages.length}`;
+    }
+    if (this.elements.handbookPrevBtn) this.elements.handbookPrevBtn.disabled = this.handbookPageIndex === 0;
+    if (this.elements.handbookNextBtn) this.elements.handbookNextBtn.disabled = this.handbookPageIndex === this.handbookPages.length - 1;
   }
 
   handleStateChange(data) {
@@ -292,6 +390,7 @@ export class UIRenderer {
 
     // Documents presented on desk
     this.renderDocuments(data.documents, data.caseRecord, data.issues);
+    this.renderCustomerAcrossDesk(data);
 
     // Right pane: employee manual + conditions
     this.renderFlags(data.conditions, data.npc.flags, data.caseRecord);
@@ -302,6 +401,17 @@ export class UIRenderer {
     // Hide overlays
     this.hideOverlay();
     this.hideBribeOverlay();
+  }
+
+  renderCustomerAcrossDesk(data) {
+    const npc = data.npc;
+    if (this.elements.deskCustomerAvatar) {
+      const initials = npc.fullName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+      this.elements.deskCustomerAvatar.innerHTML = `<span>${initials}</span>`;
+    }
+    if (this.elements.deskCustomerChat) {
+      this.elements.deskCustomerChat.innerHTML = `<p>"${data.greeting}"</p>`;
+    }
   }
 
   updateHUD(queueStatus) {
@@ -436,26 +546,83 @@ export class UIRenderer {
 
     if (providedDocs.length === 0) {
       this.elements.documentContent.innerHTML = `
-        <div class="paper-stack-empty">
-          <p>No documents were handed over at the desk.</p>
-          <p class="doc-subtle">Use the system records and employee manual to determine required paperwork.</p>
+        <div class="desk-surface">
+          <div class="paper-stack-empty">
+            <p>No documents were handed over at the desk.</p>
+            <p class="doc-subtle">Use the system records and employee manual to determine required paperwork.</p>
+          </div>
         </div>
       `;
       return;
     }
 
-    const applicationSheet = `<article class="paper-sheet application-sheet" style="--sheet-tilt:-1.2deg; --sheet-layer:0;">${this.renderApplicationForm(caseRecord)}</article>`;
+    const applicationSheet = `<article class="paper-sheet application-sheet draggable-paper" data-paper-id="application" data-dropzone="application" style="--sheet-tilt:-1.2deg; --sheet-layer:0; left:14%; top:12%;">${this.renderApplicationForm(caseRecord)}</article>`;
 
     const stackHtml = applicationSheet + providedDocs.map(({ docType, doc }, index) => {
       const tilt = ((index % 5) - 2) * 0.9;
       return `
-        <article class="paper-sheet doc-sheet doc-${docType}" style="--sheet-tilt:${tilt}deg; --sheet-layer:${index + 1};">
+        <article class="paper-sheet doc-sheet doc-${docType} draggable-paper" data-paper-id="${docType}-${index}" style="--sheet-tilt:${tilt}deg; --sheet-layer:${index + 1}; left:${18 + ((index * 9) % 45)}%; top:${18 + ((index * 8) % 38)}%;">
           ${this.renderDocumentDetail(doc, docType, caseRecord)}
         </article>
       `;
     }).join('');
 
-    this.elements.documentContent.innerHTML = `<div class="paper-stack">${stackHtml}</div>`;
+    this.elements.documentContent.innerHTML = `<div class="desk-surface"><div class="paper-stack">${stackHtml}</div></div>`;
+    this.bindDraggablePapers();
+  }
+
+  bindDraggablePapers() {
+    const root = this.elements.documentContent;
+    if (!root) return;
+
+    root.querySelectorAll('.draggable-paper').forEach(card => {
+      const onPointerMove = (ev) => {
+        card.style.left = `${ev.clientX - root.getBoundingClientRect().left - card.offsetWidth / 2}px`;
+        card.style.top = `${ev.clientY - root.getBoundingClientRect().top - 20}px`;
+      };
+
+      const onPointerUp = (ev) => {
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerup', onPointerUp);
+
+        const stamp = document.querySelector('.stamp-token.dragging-stamp');
+        if (stamp && card.dataset.dropzone === 'application') {
+          this.applyStampDecision(stamp.dataset.action);
+          stamp.classList.remove('dragging-stamp');
+        }
+      };
+
+      card.addEventListener('pointerdown', (ev) => {
+        if (ev.button !== 0) return;
+        card.style.zIndex = String(++this.paperDragZ);
+        card.classList.add('drag-active');
+        onPointerMove(ev);
+        document.addEventListener('pointermove', onPointerMove);
+        document.addEventListener('pointerup', (e) => {
+          card.classList.remove('drag-active');
+          onPointerUp(e);
+        }, { once: true });
+      });
+    });
+
+    const appCard = root.querySelector('[data-dropzone="application"]');
+    if (appCard) {
+      appCard.addEventListener('dragover', (e) => e.preventDefault());
+      appCard.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const action = e.dataTransfer?.getData('text/stamp-action');
+        if (action) this.applyStampDecision(action);
+      });
+    }
+  }
+
+  applyStampDecision(action) {
+    if (!action) return;
+    const denyReasons = Object.keys(this.game.catalogs.reasonCodes.Deny || {});
+    const reason = action === 'Deny'
+      ? (denyReasons[0] || 'MissingDocument')
+      : (action === 'Escalate' ? 'SupervisorRequired' : 'AllDocumentsValid');
+    this.game.makeDecision(action, reason);
   }
 
   renderSystemRecords(caseRecord) {
@@ -778,6 +945,29 @@ export class UIRenderer {
         this.elements.denyReasons.classList.toggle('expanded');
       };
     }
+
+    if (this.elements.decisionPanel && !this.elements.decisionPanel.querySelector('.stamp-tray')) {
+      this.elements.decisionPanel.insertAdjacentHTML('afterbegin', `
+        <div class="stamp-tray">
+          <div class="stamp-token stamp-approve" draggable="true" data-action="Approve">APPROVE</div>
+          <div class="stamp-token stamp-deny" draggable="true" data-action="Deny">DENY</div>
+          <div class="stamp-token stamp-escalate" draggable="true" data-action="Escalate">ESCALATE</div>
+          <p class="stamp-help">Drag stamp onto application form to finalize.</p>
+        </div>
+      `);
+    }
+
+    this.elements.decisionPanel?.querySelectorAll('.stamp-token').forEach(stamp => {
+      stamp.addEventListener('dragstart', (e) => {
+        stamp.classList.add('dragging-stamp');
+        e.dataTransfer?.setData('text/stamp-action', stamp.dataset.action || '');
+      });
+      stamp.addEventListener('dragend', () => stamp.classList.remove('dragging-stamp'));
+      stamp.addEventListener('pointerdown', () => {
+        document.querySelectorAll('.stamp-token').forEach(s => s.classList.remove('dragging-stamp'));
+        stamp.classList.add('dragging-stamp');
+      });
+    });
   }
 
   showResult(data) {
