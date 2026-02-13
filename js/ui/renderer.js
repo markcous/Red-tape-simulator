@@ -7,6 +7,7 @@ export class UIRenderer {
 
   init() {
     this.cacheElements();
+    this.ensureHandbookOverlay();
     this.bindEvents();
 
     this.game.onStateChange = (data) => this.handleStateChange(data);
@@ -84,7 +85,12 @@ export class UIRenderer {
       queueDisplay: document.getElementById('queue-display'),
 
       // Notification area
-      notificationArea: document.getElementById('notification-area')
+      notificationArea: document.getElementById('notification-area'),
+
+      // Handbook overlay (created dynamically if missing)
+      handbookOverlay: document.getElementById('handbook-overlay'),
+      handbookContent: document.getElementById('handbook-content'),
+      closeHandbookBtn: document.getElementById('close-handbook-btn')
     };
   }
 
@@ -112,6 +118,40 @@ export class UIRenderer {
       this.game.state = 'menu';
       this.handleStateChange({ state: 'menu' });
     });
+
+    this.elements.closeHandbookBtn?.addEventListener('click', () => this.closeHandbook());
+    this.elements.handbookOverlay?.addEventListener('click', (e) => {
+      if (e.target === this.elements.handbookOverlay) this.closeHandbook();
+    });
+  }
+
+  ensureHandbookOverlay() {
+    if (this.elements.handbookOverlay) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'handbook-overlay';
+    overlay.className = 'hidden';
+    overlay.innerHTML = `
+      <div class="handbook-shell">
+        <button id="close-handbook-btn" class="btn btn-sm">Close Handbook</button>
+        <div id="handbook-content"></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    this.elements.handbookOverlay = overlay;
+    this.elements.handbookContent = overlay.querySelector('#handbook-content');
+    this.elements.closeHandbookBtn = overlay.querySelector('#close-handbook-btn');
+  }
+
+  openHandbook(caseRecord) {
+    if (!this.elements.handbookOverlay || !this.elements.handbookContent || !caseRecord) return;
+    this.elements.handbookContent.innerHTML = this.renderEmployeeManual(caseRecord);
+    this.elements.handbookOverlay.classList.remove('hidden');
+  }
+
+  closeHandbook() {
+    this.elements.handbookOverlay?.classList.add('hidden');
   }
 
   handleStateChange(data) {
@@ -235,6 +275,7 @@ export class UIRenderer {
   }
 
   showServing(data) {
+    this.currentServingData = data;
     this.elements.gameScreen.classList.remove('hidden');
 
     // Update HUD
@@ -291,35 +332,26 @@ export class UIRenderer {
 
   renderCustomer(data) {
     const npc = data.npc;
-    const archetype = data.archetype;
 
-    // Generate portrait
     if (this.elements.customerPortrait) {
-      this.elements.customerPortrait.innerHTML = this.generatePortrait(npc);
+      this.elements.customerPortrait.innerHTML = '';
     }
 
     if (this.elements.customerName) {
-      this.elements.customerName.innerHTML = `
-        <span class="name">${npc.fullName}</span>
-        <span class="archetype-badge ${archetype?.id || ''}">${archetype?.name || 'Customer'}</span>
-      `;
+      this.elements.customerName.innerHTML = `<span class="name">DMV TERMINAL</span><span class="archetype-badge">AS400</span>`;
     }
 
     if (this.elements.customerGreeting) {
       this.elements.customerGreeting.innerHTML = `
-        <div class="speech-bubble">
-          <p>"${data.greeting}"</p>
+        <div class="speech-bubble terminal-log">
+          <p>&gt; QUERY RESIDENT: ${npc.fullName.toUpperCase()}</p>
+          <p>&gt; MATCH FOUND · FILE READY</p>
         </div>
       `;
     }
 
     if (this.elements.customerInfo) {
       const requestName = data.caseRecord.requestType.replace(/([A-Z])/g, ' $1').trim();
-      const missionNarrative = `${npc.fullName} is requesting ${requestName}. Verify required paperwork, apply policy, and decide whether to approve, deny, or escalate.`;
-      const contextNarrative = npc.isReturning
-        ? `${npc.fullName} is a returning resident and may reference prior visits.`
-        : `${npc.fullName} appears to be a first-time interaction in your current memory.`;
-
       const devDiagnostics = this.game.developmentMode ? `
         <div class="dev-diagnostics">
           <h4>Development Diagnostics</h4>
@@ -332,8 +364,8 @@ export class UIRenderer {
         <details class="mission-card" open>
           <summary>Mission Briefing</summary>
           <div class="mission-body">
-            <p>${missionNarrative}</p>
-            <p class="mission-secondary">${contextNarrative}</p>
+            <p>Process a <strong>${requestName}</strong> request. Compare claims on paper with terminal truth and policy.</p>
+            <p class="mission-secondary">Final authority comes from policy and on-file records, not customer claims.</p>
             <p><strong>Fee at stake:</strong> $${data.caseRecord.inputs.fee}</p>
           </div>
         </details>
@@ -387,10 +419,15 @@ export class UIRenderer {
       .filter(entry => entry.doc && entry.doc.present);
 
     if (this.elements.documentTabs) {
+      const seated = this.currentServingData?.npc?.fullName || 'Customer';
+      const line = this.currentServingData?.greeting || '...';
       this.elements.documentTabs.innerHTML = `
         <div class="paperwork-header">
           <span class="paperwork-title">Desk Paperwork</span>
-          <span class="paperwork-subtitle">Documents physically submitted by applicant</span>
+          <span class="paperwork-subtitle">Application + customer-submitted documents</span>
+        </div>
+        <div class="customer-across-desk">
+          <strong>${seated}</strong> sits across the desk: "${line}"
         </div>
       `;
     }
@@ -407,10 +444,12 @@ export class UIRenderer {
       return;
     }
 
-    const stackHtml = providedDocs.map(({ docType, doc }, index) => {
+    const applicationSheet = `<article class="paper-sheet application-sheet" style="--sheet-tilt:-1.2deg; --sheet-layer:0;">${this.renderApplicationForm(caseRecord)}</article>`;
+
+    const stackHtml = applicationSheet + providedDocs.map(({ docType, doc }, index) => {
       const tilt = ((index % 5) - 2) * 0.9;
       return `
-        <article class="paper-sheet" style="--sheet-tilt:${tilt}deg; --sheet-layer:${index};">
+        <article class="paper-sheet doc-sheet doc-${docType}" style="--sheet-tilt:${tilt}deg; --sheet-layer:${index + 1};">
           ${this.renderDocumentDetail(doc, docType, caseRecord)}
         </article>
       `;
@@ -473,6 +512,24 @@ export class UIRenderer {
           </div>
         </div>
         ${flagsHTML || '<p class="no-flags">No active flags on record.</p>'}
+      </div>
+    `;
+  }
+
+  renderApplicationForm(caseRecord) {
+    return `
+      <div class="doc-detail application-form">
+        <div class="doc-header">
+          <h4>DMV Application Form</h4>
+          <span class="doc-status status-received">RECEIVED</span>
+        </div>
+        <div class="doc-fields">
+          <div class="doc-field"><span class="field-label">Requested Action:</span><span class="field-value">${this.game.caseGenerator.formatRequestType(caseRecord.requestType)}</span></div>
+          <div class="doc-field"><span class="field-label">Applicant:</span><span class="field-value">${this.game.currentNPC?.fullName || 'Unknown'}</span></div>
+          <div class="doc-field"><span class="field-label">Fee:</span><span class="field-value">$${caseRecord.inputs.fee || 0}</span></div>
+          <div class="doc-field"><span class="field-label">Declared Address:</span><span class="field-value">${this.game.currentNPC?.identity?.address || 'N/A'}</span></div>
+        </div>
+        <div class="application-note">Anchor document — compare supporting papers + terminal records before stamping.</div>
       </div>
     `;
   }
@@ -670,14 +727,6 @@ export class UIRenderer {
   renderFlags(conditions, flags, caseRecord = null) {
     if (!this.elements.flagsPanel) return;
 
-    const isOpen = this.game.gameState.manualOpen;
-    const manualSection = caseRecord
-      ? `<div class="manual-panel ${isOpen ? 'open' : 'closed'}">
-          <button class="manual-toggle" type="button" id="manual-toggle-btn">${isOpen ? 'Close Manual' : 'Open Manual'}</button>
-          ${isOpen ? this.renderEmployeeManual(caseRecord) : '<div class="manual-book-cover">Employee Manual (closed)</div>'}
-        </div>`
-      : '';
-
     let conditionsSection = '<p class="no-flags">No special conditions.</p>';
     if (conditions.length > 0 || flags.length > 0) {
       conditionsSection = conditions.map(c => `
@@ -693,19 +742,18 @@ export class UIRenderer {
     }
 
     this.elements.flagsPanel.innerHTML = `
-      ${manualSection}
+      <div class="handbook-shelf">
+        <button id="open-handbook-btn" class="manual-toggle" type="button">Open Employee Handbook</button>
+      </div>
       <div class="conditions-panel">
         <h3>Conditions & Alerts</h3>
         ${conditionsSection}
       </div>
     `;
 
-    const toggleBtn = this.elements.flagsPanel.querySelector('#manual-toggle-btn');
-    if (toggleBtn) {
-      toggleBtn.addEventListener('click', () => {
-        this.game.setManualOpen(!this.game.gameState.manualOpen);
-        this.renderFlags(conditions, flags, caseRecord);
-      });
+    const openBtn = this.elements.flagsPanel.querySelector('#open-handbook-btn');
+    if (openBtn) {
+      openBtn.addEventListener('click', () => this.openHandbook(caseRecord));
     }
   }
 

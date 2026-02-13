@@ -1647,3 +1647,103 @@ body {
 ::-webkit-scrollbar-track { background: var(--bg-primary); }
 ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+
+
+/* Desk-model refinements */
+#customer-portrait { display: none; }
+
+.terminal-log {
+  background: #020;
+  border: 1px solid #0a3;
+  color: #72ff8a;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.customer-across-desk {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.application-form {
+  border: 2px solid #d0c6b2;
+  background: linear-gradient(180deg, #f9f3e8, #f3ebdc);
+}
+
+.application-sheet .doc-detail {
+  border-left: 4px solid #607d8b;
+}
+
+.application-note {
+  margin-top: 10px;
+  font-size: 0.74rem;
+  color: #5c5142;
+  font-style: italic;
+}
+
+.doc-sheet {
+  transform-origin: 20% 10%;
+}
+
+.doc-proofOfResidence .doc-detail,
+.doc-insuranceProof .doc-detail,
+.doc-registrationCard .doc-detail,
+.doc-titleDocument .doc-detail {
+  background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0.015) 0px, rgba(0,0,0,0.015) 1px, transparent 1px, transparent 23px);
+}
+
+#handbook-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.72);
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+#handbook-overlay.hidden {
+  display: none;
+}
+
+.handbook-shell {
+  width: min(980px, 95vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: linear-gradient(90deg, #f1e4ce 49.2%, #c6ad84 50%, #f1e4ce 50.8%);
+  border: 2px solid #8e6f44;
+  border-radius: 10px;
+  padding: 18px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+
+.handbook-shell #handbook-content .system-records {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.handbook-shell .manual-table-wrap {
+  background: rgba(255,255,255,0.35);
+}
+
+.handbook-shelf {
+  margin-bottom: 10px;
+}
+
+/* Rubber-stamp style decision controls */
+#approve-btn, #deny-btn, #escalate-btn {
+  font-family: 'IBM Plex Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  border-width: 2px;
+}
+
+#approve-btn { transform: rotate(-1deg); }
+#deny-btn { transform: rotate(1.2deg); }
+#escalate-btn { transform: rotate(-0.6deg); }
