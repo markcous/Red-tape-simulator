@@ -18,7 +18,7 @@
         "VehicleRegistration": ["titleDocument", "insuranceProof", "driversLicense", "billOfSale"],
         "PlateRenewal": ["registrationCard", "insuranceProof"],
         "TitleTransfer": ["titleDocument", "billOfSale", "driversLicense", "odometerDisclosure"],
-        "DuplicateLicense": ["driversLicense", "proofOfResidence"],
+        "DuplicateLicense": ["socialSecurityCard", "proofOfResidence"],
         "AddressChange": ["driversLicense", "proofOfResidence"],
         "NameChange": ["driversLicense", "courtOrder", "proofOfResidence"]
       },

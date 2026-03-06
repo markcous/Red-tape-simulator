@@ -18,7 +18,7 @@
   <!-- MENU SCREEN -->
   <div id="menu-screen" class="hidden">
     <div class="menu-container">
-      <h1 class="game-title">RED TAPE<br>SIMULATOR</h1>
+      <img src="assets/Red Tape Simulator Title.png" alt="Red Tape Simulator title" class="menu-title-art" onerror="this.style.display='none'">
       <p class="game-subtitle">A Quirky Bureaucracy Simulator</p>
       <div class="menu-buttons">
         <button id="start-shift-btn" class="btn btn-primary">Start First Shift</button>
@@ -30,7 +30,7 @@
 
   <!-- SHIFT START SCREEN -->
   <div id="shift-start-screen" class="hidden">
-    <div style="max-width: 500px; width: 100%;">
+    <div class="shift-start-container">
       <div id="shift-start-content"></div>
       <button id="begin-shift-btn" class="btn btn-primary">Begin Shift</button>
     </div>
@@ -72,15 +72,6 @@
 
     <!-- Main game area -->
     <div class="game-main" id="DMVDeskUI">
-      <!-- Left: Customer -->
-      <div id="customer-panel">
-        <div id="customer-portrait"></div>
-        <div id="customer-name"></div>
-        <div id="customer-greeting"></div>
-        <div id="customer-info"></div>
-        <div id="queue-display"></div>
-      </div>
-
       <!-- Center: Documents -->
       <div id="document-panel">
         <div id="document-tabs"></div>
@@ -95,7 +86,7 @@
         <div id="decision-panel">
           <h3>Your Decision</h3>
           <button id="approve-btn" class="btn btn-success">Approve</button>
-          <button id="deny-btn" class="btn btn-danger">Deny (Select Reason)</button>
+          <button id="deny-btn" class="btn btn-danger">Deny</button>
           <div id="deny-reasons"></div>
           <button id="escalate-btn" class="btn btn-warning">Escalate to Supervisor</button>
         </div>
@@ -125,6 +116,26 @@
         <div class="bribe-buttons">
           <button id="accept-bribe-btn" class="btn btn-warning">Accept Bribe</button>
           <button id="decline-bribe-btn" class="btn btn-success">Decline</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Document Request Decision Overlay -->
+    <div id="doc-request-overlay" class="hidden">
+      <div>
+        <div id="doc-request-content"></div>
+        <div id="doc-request-actions" class="doc-request-actions"></div>
+      </div>
+    </div>
+
+    <!-- Deny Reason Overlay -->
+    <div id="deny-reason-overlay" class="hidden">
+      <div class="deny-reason-card">
+        <h3>Select Denial Reason</h3>
+        <p>Choose the policy reason before applying the DENY stamp.</p>
+        <div id="deny-reason-list" class="deny-reason-list"></div>
+        <div class="deny-reason-actions">
+          <button id="cancel-deny-reason-btn" type="button" class="btn">Cancel</button>
         </div>
       </div>
     </div>

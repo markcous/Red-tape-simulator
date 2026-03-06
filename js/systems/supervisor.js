@@ -39,7 +39,11 @@ export class SupervisorSystem {
       reputationDelta: { towardPlayer: 0, towardAgency: 0 }
     };
 
-    const isCorrect = playerDecision.action === correctAction.action;
+    const isActionMatch = playerDecision.action === correctAction.action;
+    const isDenyReasonMatch = !isActionMatch
+      || playerDecision.action !== 'Deny'
+      || playerDecision.reasonCode === correctAction.reasonCode;
+    const isCorrect = isActionMatch && isDenyReasonMatch;
     evaluation.correct = isCorrect;
 
     if (isCorrect) {
@@ -60,7 +64,13 @@ export class SupervisorSystem {
       }
     } else {
       // Incorrect decision
-      if (playerDecision.action === 'Approve' && correctAction.action === 'Deny') {
+      if (playerDecision.action === 'Deny' && correctAction.action === 'Deny') {
+        // Denial was warranted, but the reason code was wrong.
+        evaluation.policyError = 'minor';
+        evaluation.sentiment = 'annoyed';
+        evaluation.reputationDelta = { ...this.balancing.reputation.escalate };
+        evaluation.feedback = `Wrong deny reason. Expected ${correctAction.reasonCode}: ${correctAction.explanation}`;
+      } else if (playerDecision.action === 'Approve' && correctAction.action === 'Deny') {
         // Approved something that should've been denied - major error
         evaluation.policyError = 'major';
         evaluation.sentiment = 'neutral'; // Customer is happy but it's wrong

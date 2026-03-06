@@ -49,6 +49,81 @@ Game Design Document – Quirky Bureaucracy Simulator
 •	Building Permits
 •	Code Enforcement
 •	Business Licensing
+
+## Local License Photo Library
+
+The game supports local customer/license photos for identity matching.
+
+### Files and folders
+
+- Manifest: `data/photo-library.json`
+- Customer portraits: `assets/photos/customers/`
+- License photos: `assets/photos/licenses/`
+
+Each person should use the same ID in both folders, for example:
+
+- `assets/photos/customers/p_0001.png`
+- `assets/photos/licenses/p_0001.png`
+
+### Manifest format
+
+```json
+{
+  "photos": [
+    {
+      "id": "p_0001",
+      "customerImage": "assets/photos/customers/p_0001.png",
+      "licenseImage": "assets/photos/licenses/p_0001.png",
+      "tags": {
+        "ageBand": "25-34",
+        "hairColor": "brown",
+        "hairStyle": "short",
+        "accessories": ["glasses"]
+      }
+    }
+  ]
+}
+```
+
+### Optional single-atlas format
+
+If you prefer one grid image instead of many files, use a top-level `atlas` block and per-photo tile coordinates.
+
+```json
+{
+  "atlas": {
+    "image": "assets/photos/atlas.png",
+    "tileWidth": 256,
+    "tileHeight": 320,
+    "columns": 10
+  },
+  "photos": [
+    {
+      "id": "p_0001",
+      "customerAtlas": { "col": 0, "row": 0 },
+      "licenseAtlas": { "col": 1, "row": 0 },
+      "tags": {
+        "ageBand": "25-34",
+        "hairColor": "brown",
+        "hairStyle": "short",
+        "accessories": ["glasses"]
+      }
+    }
+  ]
+}
+```
+
+Notes:
+
+- `customerImage` / `licenseImage` still work and are preferred when present.
+- Atlas mode is used when image paths are not provided.
+
+### Behavior
+
+- NPC generation picks a stable `photoId` by matching appearance tags.
+- The customer desk strip uses `customerImage`.
+- The drivers license card uses `licenseImage`.
+- Fraud with `photo_mismatch` can intentionally swap to a different `licensePhotoId`.
 3.4 Public Spaces
 •	Shared lobby (occasional cross-department events)
 •	Break room (coworker interactions, optional minigames)

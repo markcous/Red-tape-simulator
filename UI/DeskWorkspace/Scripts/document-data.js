@@ -1,34 +1,44 @@
+const nonEmpty = (value, fallback) => {
+  const normalized = value === null || value === undefined ? '' : String(value).trim();
+  return normalized || fallback;
+};
+
+const parseDate = (value) => {
+  if (!value) return new Date();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
 export class PersonData {
   constructor({ name = '', dob = '', address = '' } = {}) {
-    this.name = name;
-    this.dob = dob;
-    this.address = address;
+    this.name = nonEmpty(name, 'Name on file');
+    this.dob = nonEmpty(dob, new Date().toISOString().slice(0, 10));
+    this.address = nonEmpty(address, 'Address on file');
   }
 }
 
 export class VehicleData {
   constructor({ vin = '', make = '', model = '', year = '' } = {}) {
-    this.vin = vin;
-    this.make = make;
-    this.model = model;
-    this.year = year;
+    this.vin = nonEmpty(vin, 'Pending verification');
+    this.make = nonEmpty(make, 'Make on file');
+    this.model = nonEmpty(model, 'Model on file');
+    this.year = nonEmpty(year, String(new Date().getFullYear()));
   }
 }
 
 export class PolicyData {
   constructor({ policyNumber = '', provider = '', expDate = '' } = {}) {
-    this.policyNumber = policyNumber;
-    this.provider = provider;
-    this.expDate = expDate;
+    this.policyNumber = nonEmpty(policyNumber, 'POL-ONFILE');
+    this.provider = nonEmpty(provider, 'Carrier on file');
+    this.expDate = nonEmpty(expDate, new Date().toISOString().slice(0, 10));
   }
 }
 
 export const DateFormatters = {
-  usShort: (value) => value || 'N/A',
+  usShort: (value) => parseDate(value).toLocaleDateString('en-US'),
   monthName: (value) => {
-    if (!value) return 'N/A';
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const parsed = parseDate(value);
+    return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   },
-  iso: (value) => value || 'N/A'
+  iso: (value) => parseDate(value).toISOString().slice(0, 10)
 };

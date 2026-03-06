@@ -1,0 +1,770 @@
+﻿{
+    "atlas":  {
+                  "image":  "assets/photos/atlas.png",
+                  "tileWidth":  256,
+                  "tileHeight":  320,
+                  "columns":  10
+              },
+    "photos":  [
+                   {
+                       "id":  "p_0001",
+                       "customerAtlas":  {
+                                             "col":  0,
+                                             "row":  0
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  1,
+                                            "row":  0
+                                        },
+                       "tags":  {
+                                    "ageBand":  "16-17",
+                                    "hairColor":  "black",
+                                    "hairStyle":  "short",
+                                    "accessories":  [
+
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0002",
+                       "customerAtlas":  {
+                                             "col":  2,
+                                             "row":  0
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  3,
+                                            "row":  0
+                                        },
+                       "tags":  {
+                                    "ageBand":  "16-17",
+                                    "hairColor":  "black",
+                                    "hairStyle":  "short",
+                                    "accessories":  [
+
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0003",
+                       "customerAtlas":  {
+                                             "col":  4,
+                                             "row":  0
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  5,
+                                            "row":  0
+                                        },
+                       "tags":  {
+                                    "ageBand":  "18-24",
+                                    "hairColor":  "black",
+                                    "hairStyle":  "short",
+                                    "accessories":  [
+
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0004",
+                       "customerAtlas":  {
+                                             "col":  6,
+                                             "row":  0
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  7,
+                                            "row":  0
+                                        },
+                       "tags":  {
+                                    "ageBand":  "18-24",
+                                    "hairColor":  "black",
+                                    "hairStyle":  "short",
+                                    "accessories":  [
+
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0005",
+                       "customerAtlas":  {
+                                             "col":  8,
+                                             "row":  0
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  9,
+                                            "row":  0
+                                        },
+                       "tags":  {
+                                    "ageBand":  "18-24",
+                                    "hairColor":  "black",
+                                    "hairStyle":  "short",
+                                    "accessories":  [
+
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0006",
+                       "customerAtlas":  {
+                                             "col":  0,
+                                             "row":  1
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  1,
+                                            "row":  1
+                                        },
+                       "tags":  {
+                                    "ageBand":  "18-24",
+                                    "hairColor":  "black",
+                                    "hairStyle":  "short",
+                                    "accessories":  [
+
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0007",
+                       "customerAtlas":  {
+                                             "col":  2,
+                                             "row":  1
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  3,
+                                            "row":  1
+                                        },
+                       "tags":  {
+                                    "ageBand":  "18-24",
+                                    "hairColor":  "black",
+                                    "hairStyle":  "short",
+                                    "accessories":  [
+
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0008",
+                       "customerAtlas":  {
+                                             "col":  4,
+                                             "row":  1
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  5,
+                                            "row":  1
+                                        },
+                       "tags":  {
+                                    "ageBand":  "18-24",
+                                    "hairColor":  "black",
+                                    "hairStyle":  "short",
+                                    "accessories":  [
+
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0009",
+                       "customerAtlas":  {
+                                             "col":  6,
+                                             "row":  1
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  7,
+                                            "row":  1
+                                        },
+                       "tags":  {
+                                    "ageBand":  "25-34",
+                                    "hairColor":  "black",
+                                    "hairStyle":  "short",
+                                    "accessories":  [
+
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0010",
+                       "customerAtlas":  {
+                                             "col":  8,
+                                             "row":  1
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  9,
+                                            "row":  1
+                                        },
+                       "tags":  {
+                                    "ageBand":  "25-34",
+                                    "hairColor":  "black",
+                                    "hairStyle":  "short",
+                                    "accessories":  [
+
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0011",
+                       "customerAtlas":  {
+                                             "col":  0,
+                                             "row":  2
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  1,
+                                            "row":  2
+                                        },
+                       "tags":  {
+                                    "ageBand":  "25-34",
+                                    "hairColor":  "black",
+                                    "hairStyle":  "short",
+                                    "accessories":  [
+                                                        "glasses"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0012",
+                       "customerAtlas":  {
+                                             "col":  2,
+                                             "row":  2
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  3,
+                                            "row":  2
+                                        },
+                       "tags":  {
+                                    "ageBand":  "25-34",
+                                    "hairColor":  "brown",
+                                    "hairStyle":  "short",
+                                    "accessories":  [
+                                                        "glasses"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0013",
+                       "customerAtlas":  {
+                                             "col":  4,
+                                             "row":  2
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  5,
+                                            "row":  2
+                                        },
+                       "tags":  {
+                                    "ageBand":  "25-34",
+                                    "hairColor":  "brown",
+                                    "hairStyle":  "long",
+                                    "accessories":  [
+                                                        "glasses"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0014",
+                       "customerAtlas":  {
+                                             "col":  6,
+                                             "row":  2
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  7,
+                                            "row":  2
+                                        },
+                       "tags":  {
+                                    "ageBand":  "25-34",
+                                    "hairColor":  "brown",
+                                    "hairStyle":  "long",
+                                    "accessories":  [
+                                                        "glasses"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0015",
+                       "customerAtlas":  {
+                                             "col":  8,
+                                             "row":  2
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  9,
+                                            "row":  2
+                                        },
+                       "tags":  {
+                                    "ageBand":  "25-34",
+                                    "hairColor":  "brown",
+                                    "hairStyle":  "long",
+                                    "accessories":  [
+                                                        "glasses"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0016",
+                       "customerAtlas":  {
+                                             "col":  0,
+                                             "row":  3
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  1,
+                                            "row":  3
+                                        },
+                       "tags":  {
+                                    "ageBand":  "25-34",
+                                    "hairColor":  "brown",
+                                    "hairStyle":  "long",
+                                    "accessories":  [
+                                                        "glasses"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0017",
+                       "customerAtlas":  {
+                                             "col":  2,
+                                             "row":  3
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  3,
+                                            "row":  3
+                                        },
+                       "tags":  {
+                                    "ageBand":  "25-34",
+                                    "hairColor":  "brown",
+                                    "hairStyle":  "long",
+                                    "accessories":  [
+                                                        "glasses"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0018",
+                       "customerAtlas":  {
+                                             "col":  4,
+                                             "row":  3
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  5,
+                                            "row":  3
+                                        },
+                       "tags":  {
+                                    "ageBand":  "25-34",
+                                    "hairColor":  "brown",
+                                    "hairStyle":  "long",
+                                    "accessories":  [
+                                                        "glasses"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0019",
+                       "customerAtlas":  {
+                                             "col":  6,
+                                             "row":  3
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  7,
+                                            "row":  3
+                                        },
+                       "tags":  {
+                                    "ageBand":  "35-44",
+                                    "hairColor":  "brown",
+                                    "hairStyle":  "long",
+                                    "accessories":  [
+                                                        "glasses"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0020",
+                       "customerAtlas":  {
+                                             "col":  8,
+                                             "row":  3
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  9,
+                                            "row":  3
+                                        },
+                       "tags":  {
+                                    "ageBand":  "35-44",
+                                    "hairColor":  "brown",
+                                    "hairStyle":  "long",
+                                    "accessories":  [
+                                                        "glasses"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0021",
+                       "customerAtlas":  {
+                                             "col":  0,
+                                             "row":  4
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  1,
+                                            "row":  4
+                                        },
+                       "tags":  {
+                                    "ageBand":  "35-44",
+                                    "hairColor":  "brown",
+                                    "hairStyle":  "long",
+                                    "accessories":  [
+                                                        "earrings"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0022",
+                       "customerAtlas":  {
+                                             "col":  2,
+                                             "row":  4
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  3,
+                                            "row":  4
+                                        },
+                       "tags":  {
+                                    "ageBand":  "35-44",
+                                    "hairColor":  "brown",
+                                    "hairStyle":  "curly",
+                                    "accessories":  [
+                                                        "earrings"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0023",
+                       "customerAtlas":  {
+                                             "col":  4,
+                                             "row":  4
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  5,
+                                            "row":  4
+                                        },
+                       "tags":  {
+                                    "ageBand":  "35-44",
+                                    "hairColor":  "blonde",
+                                    "hairStyle":  "curly",
+                                    "accessories":  [
+                                                        "earrings"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0024",
+                       "customerAtlas":  {
+                                             "col":  6,
+                                             "row":  4
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  7,
+                                            "row":  4
+                                        },
+                       "tags":  {
+                                    "ageBand":  "35-44",
+                                    "hairColor":  "blonde",
+                                    "hairStyle":  "curly",
+                                    "accessories":  [
+                                                        "earrings"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0025",
+                       "customerAtlas":  {
+                                             "col":  8,
+                                             "row":  4
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  9,
+                                            "row":  4
+                                        },
+                       "tags":  {
+                                    "ageBand":  "35-44",
+                                    "hairColor":  "blonde",
+                                    "hairStyle":  "curly",
+                                    "accessories":  [
+                                                        "earrings"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0026",
+                       "customerAtlas":  {
+                                             "col":  0,
+                                             "row":  5
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  1,
+                                            "row":  5
+                                        },
+                       "tags":  {
+                                    "ageBand":  "35-44",
+                                    "hairColor":  "blonde",
+                                    "hairStyle":  "curly",
+                                    "accessories":  [
+                                                        "earrings"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0027",
+                       "customerAtlas":  {
+                                             "col":  2,
+                                             "row":  5
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  3,
+                                            "row":  5
+                                        },
+                       "tags":  {
+                                    "ageBand":  "45-54",
+                                    "hairColor":  "blonde",
+                                    "hairStyle":  "curly",
+                                    "accessories":  [
+                                                        "hat"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0028",
+                       "customerAtlas":  {
+                                             "col":  4,
+                                             "row":  5
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  5,
+                                            "row":  5
+                                        },
+                       "tags":  {
+                                    "ageBand":  "45-54",
+                                    "hairColor":  "blonde",
+                                    "hairStyle":  "buzz",
+                                    "accessories":  [
+                                                        "hat"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0029",
+                       "customerAtlas":  {
+                                             "col":  6,
+                                             "row":  5
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  7,
+                                            "row":  5
+                                        },
+                       "tags":  {
+                                    "ageBand":  "45-54",
+                                    "hairColor":  "red",
+                                    "hairStyle":  "buzz",
+                                    "accessories":  [
+                                                        "hat"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0030",
+                       "customerAtlas":  {
+                                             "col":  8,
+                                             "row":  5
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  9,
+                                            "row":  5
+                                        },
+                       "tags":  {
+                                    "ageBand":  "45-54",
+                                    "hairColor":  "red",
+                                    "hairStyle":  "buzz",
+                                    "accessories":  [
+                                                        "hat"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0031",
+                       "customerAtlas":  {
+                                             "col":  0,
+                                             "row":  6
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  1,
+                                            "row":  6
+                                        },
+                       "tags":  {
+                                    "ageBand":  "45-54",
+                                    "hairColor":  "red",
+                                    "hairStyle":  "buzz",
+                                    "accessories":  [
+                                                        "necklace"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0032",
+                       "customerAtlas":  {
+                                             "col":  2,
+                                             "row":  6
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  3,
+                                            "row":  6
+                                        },
+                       "tags":  {
+                                    "ageBand":  "45-54",
+                                    "hairColor":  "gray",
+                                    "hairStyle":  "bald",
+                                    "accessories":  [
+                                                        "necklace"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0033",
+                       "customerAtlas":  {
+                                             "col":  4,
+                                             "row":  6
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  5,
+                                            "row":  6
+                                        },
+                       "tags":  {
+                                    "ageBand":  "55-64",
+                                    "hairColor":  "gray",
+                                    "hairStyle":  "bald",
+                                    "accessories":  [
+                                                        "necklace"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0034",
+                       "customerAtlas":  {
+                                             "col":  6,
+                                             "row":  6
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  7,
+                                            "row":  6
+                                        },
+                       "tags":  {
+                                    "ageBand":  "55-64",
+                                    "hairColor":  "gray",
+                                    "hairStyle":  "bald",
+                                    "accessories":  [
+                                                        "watch"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0035",
+                       "customerAtlas":  {
+                                             "col":  8,
+                                             "row":  6
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  9,
+                                            "row":  6
+                                        },
+                       "tags":  {
+                                    "ageBand":  "55-64",
+                                    "hairColor":  "gray",
+                                    "hairStyle":  "ponytail",
+                                    "accessories":  [
+                                                        "watch"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0036",
+                       "customerAtlas":  {
+                                             "col":  0,
+                                             "row":  7
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  1,
+                                            "row":  7
+                                        },
+                       "tags":  {
+                                    "ageBand":  "55-64",
+                                    "hairColor":  "gray",
+                                    "hairStyle":  "ponytail",
+                                    "accessories":  [
+                                                        "watch"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0037",
+                       "customerAtlas":  {
+                                             "col":  2,
+                                             "row":  7
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  3,
+                                            "row":  7
+                                        },
+                       "tags":  {
+                                    "ageBand":  "65+",
+                                    "hairColor":  "white",
+                                    "hairStyle":  "ponytail",
+                                    "accessories":  [
+                                                        "scarf"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0038",
+                       "customerAtlas":  {
+                                             "col":  4,
+                                             "row":  7
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  5,
+                                            "row":  7
+                                        },
+                       "tags":  {
+                                    "ageBand":  "65+",
+                                    "hairColor":  "white",
+                                    "hairStyle":  "braids",
+                                    "accessories":  [
+                                                        "scarf"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0039",
+                       "customerAtlas":  {
+                                             "col":  6,
+                                             "row":  7
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  7,
+                                            "row":  7
+                                        },
+                       "tags":  {
+                                    "ageBand":  "65+",
+                                    "hairColor":  "dyed-blue",
+                                    "hairStyle":  "braids",
+                                    "accessories":  [
+                                                        "headphones"
+                                                    ]
+                                }
+                   },
+                   {
+                       "id":  "p_0040",
+                       "customerAtlas":  {
+                                             "col":  8,
+                                             "row":  7
+                                         },
+                       "licenseAtlas":  {
+                                            "col":  9,
+                                            "row":  7
+                                        },
+                       "tags":  {
+                                    "ageBand":  "65+",
+                                    "hairColor":  "dyed-pink",
+                                    "hairStyle":  "mohawk",
+                                    "accessories":  [
+                                                        "sunglasses"
+                                                    ]
+                                }
+                   }
+               ]
+}

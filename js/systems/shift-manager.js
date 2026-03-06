@@ -71,6 +71,29 @@ export class ShiftManager {
     return customer;
   }
 
+  sendCustomerToBack(customer) {
+    if (!customer) return;
+
+    const servedWindow = Math.max(0, this.currentCustomerIndex);
+    let foundIndex = -1;
+    for (let i = servedWindow - 1; i >= 0; i--) {
+      const queued = this.customerQueue[i];
+      if (queued?.npcId && queued.npcId === customer.npcId) {
+        foundIndex = i;
+        break;
+      }
+    }
+
+    if (foundIndex === -1) {
+      this.customerQueue.push(customer);
+      return;
+    }
+
+    const [entry] = this.customerQueue.splice(foundIndex, 1);
+    this.customerQueue.push(entry);
+    this.currentCustomerIndex = Math.max(0, this.currentCustomerIndex - 1);
+  }
+
   getQueueStatus() {
     return {
       total: this.totalCustomersThisShift,
@@ -160,6 +183,19 @@ export class ShiftManager {
     }
 
     return effects;
+  }
+
+  getActiveChaosEvents() {
+    return this.activeEvents
+      .filter((event) => event.triggered && event.remainingDuration > 0)
+      .map((event) => ({
+        id: event.id,
+        name: event.name,
+        description: event.description,
+        effect: event.effect,
+        magnitude: event.magnitude,
+        remainingDuration: event.remainingDuration
+      }));
   }
 
   getShiftSummary() {

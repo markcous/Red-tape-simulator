@@ -48,6 +48,8 @@ export class DeskDocument extends DeskItem {
       vehicle,
       policy,
       dateValue: this.data.dateValue,
+      documentData: this.data.documentData || {},
+      form: this.data.form,
       id: this.id
     });
 
@@ -60,9 +62,25 @@ export class DeskDocument extends DeskItem {
       return;
     }
 
+    const normalizeOverlayValue = (value, fallback = 'Unknown') => {
+      const text = String(value ?? '').trim();
+      return text || fallback;
+    };
+
     const overlay = this.element.querySelector('.workspace-overlay') || document.createElement('div');
     overlay.className = 'workspace-overlay';
-    overlay.innerHTML = `ID: ${this.id}<br>Sort: ${this.sortIndex}<br>${this.data?.person?.name || 'Unknown'}`;
+    const baseLines = [
+      `ID: ${this.id}`,
+      `Sort: ${this.sortIndex}`,
+      normalizeOverlayValue(this.data?.person?.name)
+    ];
+
+    if (this.template === 'requestForm') {
+      baseLines.push(`Requested Service: ${normalizeOverlayValue(this.data?.form?.requestTypeLabel)}`);
+      baseLines.push(`Submitted Form: ${normalizeOverlayValue(this.data?.form?.submittedFormLabel)}`);
+    }
+
+    overlay.innerHTML = baseLines.join('<br>');
     if (!overlay.parentElement) this.element.appendChild(overlay);
   }
 }

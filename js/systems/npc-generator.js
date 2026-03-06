@@ -2,9 +2,10 @@ import { NPC, Flag } from '../models/npc.js';
 import { SeededRNG } from '../models/rng.js';
 
 export class NPCGenerator {
-  constructor(catalogs, balancing) {
+  constructor(catalogs, balancing, photoLibrary = { photos: [] }) {
     this.catalogs = catalogs;
     this.balancing = balancing;
+    this.photoLibrary = photoLibrary;
     this.globalSeed = Date.now();
     this.generationCount = 0;
   }
@@ -74,17 +75,31 @@ export class NPCGenerator {
 
     const firstName = rng.pick(this.catalogs.names.first);
     const lastName = rng.pick(this.catalogs.names.last);
-    const ssnLast4 = rng.nextInt(1000, 9999);
+    const ssnArea = rng.nextInt(100, 899);
+    const ssnGroup = rng.nextInt(10, 99);
+    const ssnSerial = rng.nextInt(1000, 9999);
+    const ssn = `${ssnArea}-${ssnGroup}-${ssnSerial}`;
     const address = rng.pick(this.catalogs.addresses);
     const phone = `555-${rng.nextInt(100, 999).toString().padStart(3, '0')}-${rng.nextInt(1000, 9999)}`;
     const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com`;
+    const sex = rng.pick(['F', 'M', 'X']);
+    const heightIn = rng.nextInt(58, 78);
+    const weightLbs = rng.nextInt(105, 295);
+    const eyeColor = rng.pick(['Brown', 'Hazel', 'Blue', 'Green', 'Gray']);
+    const organDonor = rng.chance(0.58);
 
     return {
       firstName,
       lastName,
       dob,
       age,
-      ssnMasked: `XXX-XX-${ssnLast4}`,
+      sex,
+      heightIn,
+      weightLbs,
+      eyeColor,
+      organDonor,
+      ssn,
+      ssnMasked: `XXX-XX-${String(ssnSerial).padStart(4, '0')}`,
       address,
       phone,
       email
@@ -117,10 +132,53 @@ export class NPCGenerator {
     return {
       bodyType,
       hair: { style: hairStyle, color: hairColor },
+      eyeColor: identity.eyeColor,
       facialHair: rng.chance(0.3) ? rng.pick(['stubble', 'beard', 'mustache', 'goatee']) : null,
       accessories,
-      portraitSeed: rng.nextInt(0, 999999)
+      portraitSeed: rng.nextInt(0, 999999),
+      photoId: this.pickPhotoId(rng, {
+        age: identity.age,
+        hairStyle,
+        hairColor,
+        accessories
+      })
     };
+  }
+
+  pickPhotoId(rng, traits = {}) {
+    const photos = Array.isArray(this.photoLibrary?.photos) ? this.photoLibrary.photos : [];
+    if (photos.length === 0) return null;
+
+    const desiredAgeBand = this.toAgeBand(traits.age);
+    const accessories = Array.isArray(traits.accessories) ? traits.accessories : [];
+
+    const scored = photos.map((entry) => {
+      const tags = entry?.tags || {};
+      let score = 0;
+      if (tags.ageBand && tags.ageBand === desiredAgeBand) score += 3;
+      if (tags.hairStyle && tags.hairStyle === traits.hairStyle) score += 2;
+      if (tags.hairColor && tags.hairColor === traits.hairColor) score += 2;
+
+      const taggedAccessories = Array.isArray(tags.accessories) ? tags.accessories : [];
+      const matchingAccessories = taggedAccessories.filter(acc => accessories.includes(acc)).length;
+      score += matchingAccessories;
+
+      return { id: entry.id, score };
+    });
+
+    const bestScore = Math.max(...scored.map(item => item.score));
+    const best = scored.filter(item => item.score === bestScore);
+    return rng.pick(best).id;
+  }
+
+  toAgeBand(age) {
+    if (age <= 17) return '16-17';
+    if (age <= 24) return '18-24';
+    if (age <= 34) return '25-34';
+    if (age <= 44) return '35-44';
+    if (age <= 54) return '45-54';
+    if (age <= 64) return '55-64';
+    return '65+';
   }
 
   generatePersonality(rng, archetype) {

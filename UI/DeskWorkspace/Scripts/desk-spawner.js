@@ -52,6 +52,14 @@ export class DeskSpawner {
       { id: 'license', template: 'driversLicense', sizePreset: 'WalletCard', y: 250, x: 420 }
     ];
 
+    const packetDate = this.pick(['2024-01-02', '2024-02-17', '2024-03-03']);
+    const billOfSaleData = {
+      sellerName: this.pick(['Atlas Auto Sales', 'Northview Motors', 'Harborline Auto Group']),
+      salePrice: Math.floor(this.rand() * 26000 + 4000),
+      odometerReading: `${Math.floor(this.rand() * 110000 + 5000).toLocaleString('en-US')} miles`,
+      saleCity: this.pick(['Redwood', 'Lakeside', 'Northview'])
+    };
+
     docs.forEach((doc) => {
       this.workspace.addItem(new DeskDocument(this.workspace, {
         ...doc,
@@ -60,7 +68,8 @@ export class DeskSpawner {
           person,
           vehicle,
           policy,
-          dateValue: this.pick(['2024-01-02', '2024-02-17', '2024-03-03'])
+          dateValue: packetDate,
+          documentData: doc.template === 'billOfSale' ? billOfSaleData : {}
         }
       }));
     });
