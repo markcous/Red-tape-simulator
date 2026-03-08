@@ -23,11 +23,14 @@ export class UIRenderer {
   constructor(game) {
     this.game = game;
     this.elements = {};
+    this.menuView = 'main';
     this.currentDocTab = null;
     this.handbookPageIndex = 0;
     this.handbookPages = [];
     this.showDevControls = false;
     this.devControlsStorageKey = 'redTapeShowDevControls';
+    this.pendingDeleteSlot = null;
+    this.selectedNewCareerSlot = null;
     this.lastResultData = null;
   }
 
@@ -59,11 +62,15 @@ export class UIRenderer {
       return;
     }
 
+    const settings = this.game.getSettings?.() || {};
+    const settingsEnabled = Boolean(settings.developerMode);
+
     try {
-      const enabled = localStorage.getItem(this.devControlsStorageKey) === '1';
+      const persisted = localStorage.getItem(this.devControlsStorageKey);
+      const enabled = persisted === null ? settingsEnabled : persisted === '1';
       this.setDevControlsVisibility(enabled, { persist: false, notify: false });
     } catch (_err) {
-      this.setDevControlsVisibility(false, { persist: false, notify: false });
+      this.setDevControlsVisibility(settingsEnabled, { persist: false, notify: false });
     }
   }
 
@@ -119,6 +126,11 @@ export class UIRenderer {
     const settings = this.game.getSettings?.() || {};
     document.body.classList.toggle('reduced-motion', Boolean(settings.reducedMotion));
     document.body.classList.toggle('high-contrast', Boolean(settings.highContrast));
+
+    const uiScale = Math.max(80, Math.min(140, Number(settings.uiScale ?? 100) || 100));
+    const textSize = Math.max(80, Math.min(140, Number(settings.textSize ?? 100) || 100));
+    document.documentElement.style.setProperty('--ui-scale', String(uiScale / 100));
+    document.documentElement.style.setProperty('--text-scale', String(textSize / 100));
   }
 
   cacheElements() {
@@ -126,14 +138,19 @@ export class UIRenderer {
       // Screens
       loadingScreen: document.getElementById('loading-screen'),
       menuScreen: document.getElementById('menu-screen'),
+      menuContainer: document.querySelector('#menu-screen .menu-container'),
       gameScreen: document.getElementById('game-screen'),
       shiftStartScreen: document.getElementById('shift-start-screen'),
       reviewScreen: document.getElementById('review-screen'),
 
       // Menu
-      startShiftBtn: document.getElementById('start-shift-btn'),
-      newGameBtn: document.getElementById('new-game-btn'),
-      menuStats: document.getElementById('menu-stats'),
+      menuContinueBtn: document.getElementById('menu-continue-btn'),
+      menuLoadFileBtn: document.getElementById('menu-load-file-btn'),
+      menuNewFileBtn: document.getElementById('menu-new-file-btn'),
+      menuSettingsBtn: document.getElementById('menu-settings-btn'),
+      menuCreditsBtn: document.getElementById('menu-credits-btn'),
+      menuExitBtn: document.getElementById('menu-exit-btn'),
+      menuPanel: document.getElementById('menu-panel'),
 
       // Game HUD
       clockDisplay: document.getElementById('clock-display'),
@@ -211,10 +228,38 @@ export class UIRenderer {
   }
 
   bindEvents() {
-    this.elements.startShiftBtn?.addEventListener('click', () => this.game.startShift());
-    this.elements.newGameBtn?.addEventListener('click', () => {
-      this.game.newGame();
+    this.elements.menuContinueBtn?.addEventListener('click', () => this.handleContinueFromMenu());
+    this.elements.menuLoadFileBtn?.addEventListener('click', () => {
+      this.menuView = 'load';
+      this.showMenu();
     });
+    this.elements.menuNewFileBtn?.addEventListener('click', () => {
+      this.menuView = 'new';
+      this.selectedNewCareerSlot = this.getDefaultNewCareerSlot();
+      this.showMenu();
+    });
+    this.elements.menuSettingsBtn?.addEventListener('click', () => {
+      this.menuView = 'settings';
+      this.showMenu();
+    });
+    this.elements.menuCreditsBtn?.addEventListener('click', () => {
+      this.menuView = 'credits';
+      this.showMenu();
+    });
+    this.elements.menuExitBtn?.addEventListener('click', () => this.handleExitFromMenu());
+
+    this.elements.menuPanel?.addEventListener('click', (event) => {
+      const actionButton = event.target.closest('button[data-menu-action]');
+      if (!actionButton) return;
+      this.handleMenuPanelAction(actionButton);
+    });
+
+    this.elements.menuPanel?.addEventListener('change', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      this.handleMenuPanelChange(target);
+    });
+
     this.elements.beginShiftBtn?.addEventListener('click', () => this.game.nextCustomer());
     this.elements.approveBtn?.addEventListener('click', () => {
       this.closeDeskTerminal();
@@ -677,6 +722,7 @@ export class UIRenderer {
 
     switch (data.state) {
       case 'menu':
+        this.menuView = 'main';
         this.showMenu();
         break;
       case 'shift_start':
@@ -762,161 +808,452 @@ export class UIRenderer {
 
   showMenu() {
     this.elements.menuScreen.classList.remove('hidden');
-    const player = this.game.player;
-    const stats = this.elements.menuStats;
-    const settings = this.game.getSettings ? this.game.getSettings() : {
-      autoSave: true,
-      reducedMotion: false,
-      highContrast: false
-    };
-    const hasSaveData = this.game.hasSaveData ? this.game.hasSaveData() : false;
+    const hasContinueData = Boolean(this.game.hasSaveData?.());
+    if (this.elements.menuContinueBtn) {
+      this.elements.menuContinueBtn.disabled = !hasContinueData;
+      this.elements.menuContinueBtn.textContent = 'Continue';
+    }
+    this.renderMenuPanel();
+  }
 
-    if (stats) {
-      const summaryHtml = player.shiftsCompleted > 0 ? `
-        <div class="stat-grid">
-          <div class="stat-item"><span class="stat-label">Shifts Completed</span><span class="stat-value">${player.shiftsCompleted}</span></div>
-          <div class="stat-item"><span class="stat-label">Department</span><span class="stat-value">${player.department}</span></div>
-          <div class="stat-item"><span class="stat-label">Money</span><span class="stat-value">$${player.money}</span></div>
-          <div class="stat-item"><span class="stat-label">Weekly Rating</span><span class="stat-value">${player.getWeeklyPerformance()}%</span></div>
-          <div class="stat-item"><span class="stat-label">Clean Streak</span><span class="stat-value">${player.cleanShiftStreak}</span></div>
-          <div class="stat-item"><span class="stat-label">Write-ups</span><span class="stat-value">${player.writeUps}</span></div>
-        </div>
-      ` : '';
+  renderMenuPanel() {
+    const panel = this.elements.menuPanel;
+    const menuContainer = this.elements.menuContainer;
+    if (!panel) return;
 
-      const devModeStatusHtml = this.game.developmentMode
-        ? '<p class="menu-note dev-mode-status">Developer Mode: ON</p>'
-        : '';
-
-      const difficultyOptions = this.game.getDifficultyOptions().map((option) => {
-        const selected = this.game.getDifficultyProfile().id === option.id ? 'selected' : '';
-        return `<option value="${option.id}" ${selected}>${option.label}</option>`;
-      }).join('');
-
-      const difficultyHtml = `
-        <label class="menu-select" title="Controls helper visibility and case complexity.">
-          <span>Difficulty</span>
-          <select id="difficulty-select">
-            ${difficultyOptions}
-          </select>
-        </label>
-      `;
-
-      let devToolsHtml = '';
-      if (this.showDevControls) {
-        const deptOptions = (player.unlockedDepartments || ['DMV']).map(dept => {
-          const deptName = this.game.catalogs?.departments?.[dept]?.name || dept;
-          const selected = player.department === dept ? 'selected' : '';
-          return `<option value="${dept}" ${selected}>${deptName}</option>`;
-        }).join('');
-
-        devToolsHtml = `
-          <label class="menu-select" title="Select active department from unlocked departments.">
-            <span>Department</span>
-            <select id="department-select">
-              ${deptOptions}
-            </select>
-          </label>
-        `;
-      }
-
-      const persistenceHtml = `
-        <div class="menu-section">
-          <h4>Save Data</h4>
-          <div class="menu-action-row">
-            <button id="save-game-btn" type="button" class="btn btn-sm btn-primary">Save Now</button>
-            <button id="load-game-btn" type="button" class="btn btn-sm" ${hasSaveData ? '' : 'disabled'}>Load Save</button>
-          </div>
-          <p class="menu-note">${hasSaveData ? 'A save file is available in browser storage.' : 'No save data found yet.'}</p>
-        </div>
-      `;
-
-      const settingsHtml = `
-        <div class="menu-section">
-          <h4>Settings</h4>
-          <label class="menu-checkbox">
-            <input id="autosave-toggle" type="checkbox" ${settings.autoSave ? 'checked' : ''}>
-            <span>Enable Auto Save</span>
-          </label>
-          <label class="menu-checkbox">
-            <input id="reduced-motion-toggle" type="checkbox" ${settings.reducedMotion ? 'checked' : ''}>
-            <span>Reduce Motion</span>
-          </label>
-          <label class="menu-checkbox">
-            <input id="high-contrast-toggle" type="checkbox" ${settings.highContrast ? 'checked' : ''}>
-            <span>High Contrast UI</span>
-          </label>
-        </div>
-      `;
-
-      const menuStatsHtml = `${summaryHtml}${devModeStatusHtml}${difficultyHtml}${devToolsHtml}${persistenceHtml}${settingsHtml}`.trim();
-      stats.innerHTML = menuStatsHtml;
-      stats.classList.toggle('hidden', !menuStatsHtml);
-
-      const difficultySelect = stats.querySelector('#difficulty-select');
-      if (difficultySelect) {
-        difficultySelect.addEventListener('change', () => {
-          this.game.setDifficulty(difficultySelect.value);
-          this.showNotification(`Difficulty set to ${this.game.getDifficultyLabel()}.`);
-        });
-      }
-
-      const deptSelect = stats.querySelector('#department-select');
-      if (deptSelect) {
-        deptSelect.addEventListener('change', () => {
-          const ok = this.game.setDepartment(deptSelect.value);
-          if (!ok) {
-            this.showNotification('Department selection failed.', 'error');
-            deptSelect.value = this.game.player.department;
-          }
-        });
-      }
-
-      const saveButton = stats.querySelector('#save-game-btn');
-      if (saveButton) {
-        saveButton.addEventListener('click', () => {
-          const ok = this.game.saveNow ? this.game.saveNow() : this.game.saveGame({ force: true });
-          this.showNotification(ok ? 'Game saved.' : 'Unable to save game in this browser context.', ok ? 'success' : 'error');
-          this.showMenu();
-        });
-      }
-
-      const loadButton = stats.querySelector('#load-game-btn');
-      if (loadButton) {
-        loadButton.addEventListener('click', () => {
-          const ok = this.game.loadFromSave ? this.game.loadFromSave() : this.game.loadGame();
-          if (!ok) {
-            this.showNotification('No save data to load.', 'warning');
-          }
-        });
-      }
-
-      const autoSaveToggle = stats.querySelector('#autosave-toggle');
-      if (autoSaveToggle) {
-        autoSaveToggle.addEventListener('change', () => {
-          this.game.setSetting?.('autoSave', autoSaveToggle.checked);
-          this.showNotification(`Auto save ${autoSaveToggle.checked ? 'enabled' : 'disabled'}.`);
-          this.showMenu();
-        });
-      }
-
-      const reducedMotionToggle = stats.querySelector('#reduced-motion-toggle');
-      if (reducedMotionToggle) {
-        reducedMotionToggle.addEventListener('change', () => {
-          this.game.setSetting?.('reducedMotion', reducedMotionToggle.checked);
-          this.applyVisualSettings();
-        });
-      }
-
-      const highContrastToggle = stats.querySelector('#high-contrast-toggle');
-      if (highContrastToggle) {
-        highContrastToggle.addEventListener('change', () => {
-          this.game.setSetting?.('highContrast', highContrastToggle.checked);
-          this.applyVisualSettings();
-        });
-      }
+    if (this.menuView === 'main') {
+      menuContainer?.classList.remove('menu-panel-active');
+      panel.classList.add('hidden');
+      panel.innerHTML = '';
+      return;
     }
 
-    this.elements.startShiftBtn.textContent = player.shiftsCompleted > 0 ? 'Start Next Shift' : 'Start First Shift';
+    menuContainer?.classList.add('menu-panel-active');
+    panel.classList.remove('hidden');
+
+    if (this.menuView !== 'load') {
+      this.pendingDeleteSlot = null;
+    }
+
+    switch (this.menuView) {
+      case 'load':
+        panel.innerHTML = this.renderSaveSlotPanel();
+        break;
+      case 'new':
+        panel.innerHTML = this.renderNewCareerPanel();
+        break;
+      case 'settings':
+        panel.innerHTML = this.renderSettingsPanel();
+        break;
+      case 'credits':
+        panel.innerHTML = this.renderCreditsPanel();
+        break;
+      case 'exit_confirm':
+        panel.innerHTML = this.renderExitConfirmPanel();
+        break;
+      default:
+        this.menuView = 'main';
+        panel.classList.add('hidden');
+        panel.innerHTML = '';
+        break;
+    }
+  }
+
+  renderSaveSlotPanel() {
+    const slots = this.game.getSaveSlots?.() || [];
+    const rows = slots.map((slot) => {
+      const status = slot.isEmpty
+        ? '<span class="menu-note">Empty Slot</span>'
+        : `
+          <div class="menu-slot-meta">
+            <span>Career: ${slot.careerName}</span>
+            <span>Shift: ${Math.max(1, Number(slot.shiftNumber || 0))}</span>
+            <span>Difficulty: ${this.getCareerDifficultyLabel(slot.difficulty)}</span>
+            <span>Last Played: ${this.formatSaveDate(slot.lastPlayedAt)}</span>
+          </div>
+        `;
+
+      const isPendingDelete = this.pendingDeleteSlot === slot.slot;
+      const actionHtml = isPendingDelete
+        ? `
+          <div class="menu-delete-confirm">
+            <p class="menu-note menu-delete-confirm-text">Delete Slot ${slot.slot}? This cannot be undone.</p>
+            <div class="menu-action-row">
+              <button type="button" class="btn btn-sm btn-danger" data-menu-action="confirm-delete-slot" data-slot="${slot.slot}">Confirm Delete</button>
+              <button type="button" class="btn btn-sm" data-menu-action="cancel-delete-slot" data-slot="${slot.slot}">Cancel</button>
+            </div>
+          </div>
+        `
+        : `
+          <div class="menu-action-row">
+            <button type="button" class="btn btn-sm btn-primary" data-menu-action="load-slot" data-slot="${slot.slot}" ${slot.isEmpty ? 'disabled' : ''}>Load</button>
+            <button type="button" class="btn btn-sm btn-danger" data-menu-action="delete-slot" data-slot="${slot.slot}" ${slot.isEmpty ? 'disabled' : ''}>Delete</button>
+          </div>
+        `;
+
+      return `
+        <div class="menu-slot-row">
+          <div class="menu-slot-header">
+            <strong>Slot ${slot.slot}</strong>
+          </div>
+          ${status}
+          ${actionHtml}
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="menu-section">
+        <h4>Save Slots</h4>
+        <div class="menu-slot-list">${rows}</div>
+        <div class="menu-action-row">
+          <button type="button" class="btn btn-sm" data-menu-action="back">Back</button>
+        </div>
+      </div>
+    `;
+  }
+
+  renderNewCareerPanel() {
+    const slots = this.game.getSaveSlots?.() || [];
+    const availableSlots = slots.map((slot) => slot.slot);
+    const defaultSlot = this.getDefaultNewCareerSlot();
+
+    if (this.selectedNewCareerSlot === null && defaultSlot) {
+      this.selectedNewCareerSlot = defaultSlot;
+    }
+
+    if (!availableSlots.includes(this.selectedNewCareerSlot)) {
+      this.selectedNewCareerSlot = defaultSlot;
+    }
+
+    const slotRows = slots.map((slot) => {
+      const isSelected = this.selectedNewCareerSlot === slot.slot;
+      const slotState = slot.isEmpty
+        ? '<span class="menu-note menu-slot-state">Empty Slot</span>'
+        : '<span class="menu-note menu-slot-state menu-slot-state-warning">Existing save will be overwritten</span>';
+
+      const slotMeta = slot.isEmpty
+        ? ''
+        : `
+          <div class="menu-slot-meta">
+            <span>Career: ${slot.careerName}</span>
+            <span>Shift: ${Math.max(1, Number(slot.shiftNumber || 0))}</span>
+            <span>Difficulty: ${this.getCareerDifficultyLabel(slot.difficulty)}</span>
+            <span>Last Played: ${this.formatSaveDate(slot.lastPlayedAt)}</span>
+          </div>
+        `;
+
+      const slotEditor = isSelected
+        ? `
+          <div class="menu-slot-editor">
+            <div class="menu-slot-editor-grid">
+              <label class="menu-select menu-field-block menu-slot-field-compact">
+                <span>Career Name</span>
+                <input id="new-career-name" class="menu-text-input" type="text" maxlength="40" value="New Clerk">
+              </label>
+              <label class="menu-select menu-field-block menu-slot-field-compact">
+                <span>Difficulty</span>
+                <select id="new-career-difficulty">
+                  <option value="trainee">Trainee</option>
+                  <option value="clerk" selected>Clerk</option>
+                  <option value="senior">Senior Clerk</option>
+                </select>
+              </label>
+            </div>
+            <div class="menu-action-row menu-slot-inline-actions">
+              <button type="button" class="btn btn-sm btn-primary" data-menu-action="start-career-slot" data-slot="${slot.slot}">Start Career</button>
+            </div>
+          </div>
+        `
+        : `
+          <div class="menu-action-row menu-slot-inline-actions">
+            <button type="button" class="btn btn-sm" data-menu-action="select-new-career-slot" data-slot="${slot.slot}">Select Slot ${slot.slot}</button>
+          </div>
+        `;
+
+      return `
+        <div class="menu-slot-row menu-slot-choice ${isSelected ? 'menu-slot-selected' : ''}">
+          <div class="menu-slot-choice-header">
+            <strong>Slot ${slot.slot}</strong>
+            ${isSelected ? '<span class="menu-note menu-slot-selected-tag">Selected</span>' : ''}
+          </div>
+          ${slotState}
+          ${slotMeta}
+          ${slotEditor}
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="menu-section menu-new-game-layout">
+        <h4>New Game Setup</h4>
+        ${this.selectedNewCareerSlot ? '' : '<p class="menu-note">All slots are currently occupied. Select a slot to overwrite.</p>'}
+        <div class="menu-slot-list menu-slot-list-select">${slotRows}</div>
+        <div class="menu-action-row menu-new-game-footer-actions">
+          <button type="button" class="btn btn-sm" data-menu-action="back">Back</button>
+        </div>
+      </div>
+    `;
+  }
+
+  renderSettingsPanel() {
+    const settings = this.game.getSettings?.() || {};
+
+    return `
+      <div class="menu-section">
+        <h4>Settings</h4>
+
+        <div class="menu-subsection">
+          <h5>Audio</h5>
+          ${this.renderRangeSetting('Master Volume', 'masterVolume', settings.masterVolume ?? 100)}
+          ${this.renderRangeSetting('Music Volume', 'musicVolume', settings.musicVolume ?? 80)}
+          ${this.renderRangeSetting('SFX Volume', 'sfxVolume', settings.sfxVolume ?? 80)}
+        </div>
+
+        <div class="menu-subsection">
+          <h5>Display</h5>
+          ${this.renderToggleSetting('Fullscreen', 'fullscreen', Boolean(settings.fullscreen))}
+          ${this.renderRangeSetting('UI Scale', 'uiScale', settings.uiScale ?? 100, '%')}
+          ${this.renderRangeSetting('Text Size', 'textSize', settings.textSize ?? 100, '%')}
+        </div>
+
+        <div class="menu-subsection">
+          <h5>Gameplay</h5>
+          ${this.renderToggleSetting('Confirm Before Quitting', 'confirmBeforeQuitting', settings.confirmBeforeQuitting !== false)}
+          ${this.renderToggleSetting('Autosave', 'autoSave', settings.autoSave !== false)}
+          ${this.renderToggleSetting('Tooltips', 'tooltips', settings.tooltips !== false)}
+        </div>
+
+        <div class="menu-subsection">
+          <h5>Developer</h5>
+          ${this.renderToggleSetting('Developer Mode', 'developerMode', Boolean(settings.developerMode))}
+        </div>
+
+        <div class="menu-action-row">
+          <button type="button" class="btn btn-sm" data-menu-action="back">Back</button>
+        </div>
+      </div>
+    `;
+  }
+
+  renderCreditsPanel() {
+    return `
+      <div class="menu-section menu-credits-section">
+        <h4>Credits</h4>
+        <div class="menu-credits-copy">
+          <p class="menu-note"><strong>Red Tape Simulator</strong></p>
+          <p class="menu-note">An interactive tribute to fluorescent lighting, queue numbers, and the sacred power of Form 27-B.</p>
+          <p class="menu-note">Design and development by public servants of the imaginary Department of Administrative Momentum.</p>
+          <p class="menu-note">Special thanks to:</p>
+          <p class="menu-note">- The Committee for Reviewing Last Week's Committee Notes</p>
+          <p class="menu-note">- The Office of Mandatory Optional Signatures</p>
+          <p class="menu-note">- The Task Force on Stapler Alignment and Desk Geometry</p>
+          <p class="menu-note">Built with vanilla JavaScript, paper-grade persistence, and policies revised moments before your shift.</p>
+          <p class="menu-note">No citizens were harmed during processing, though several did experience moderate waiting-room fatigue.</p>
+          <p class="menu-note">Remember: the line is always longest at whichever window you choose.</p>
+        </div>
+        <div class="menu-action-row menu-credits-actions">
+          <button type="button" class="btn btn-sm" data-menu-action="back">Back</button>
+        </div>
+      </div>
+    `;
+  }
+
+  renderExitConfirmPanel() {
+    return `
+      <div class="menu-section">
+        <h4>Exit</h4>
+        <p class="menu-note">Return to the title screen?</p>
+        <div class="menu-action-row menu-exit-confirm-actions">
+          <button type="button" class="btn btn-sm btn-danger" data-menu-action="confirm-exit">Exit</button>
+          <button type="button" class="btn btn-sm" data-menu-action="cancel-exit">Cancel</button>
+        </div>
+      </div>
+    `;
+  }
+
+  renderToggleSetting(label, key, enabled) {
+    return `
+      <label class="menu-checkbox">
+        <input type="checkbox" data-setting-key="${key}" ${enabled ? 'checked' : ''}>
+        <span>${label}</span>
+      </label>
+    `;
+  }
+
+  renderRangeSetting(label, key, value, suffix = '') {
+    const min = key === 'uiScale' || key === 'textSize' ? 80 : 0;
+    const max = key === 'uiScale' || key === 'textSize' ? 140 : 100;
+    const fallback = key === 'uiScale' || key === 'textSize' ? 100 : 0;
+    const numericValue = Math.max(min, Math.min(max, Number(value) || fallback));
+    return `
+      <label class="menu-select menu-field-block">
+        <span>${label} <strong>${numericValue}${suffix}</strong></span>
+        <input type="range" min="${min}" max="${max}" data-setting-key="${key}" value="${numericValue}">
+      </label>
+    `;
+  }
+
+  formatSaveDate(value) {
+    if (!value) return 'Never';
+    const parsed = Date.parse(value);
+    if (Number.isNaN(parsed)) return 'Unknown';
+    return new Date(parsed).toLocaleString();
+  }
+
+  getCareerDifficultyLabel(difficultyId) {
+    const map = {
+      easy: 'Trainee',
+      medium: 'Clerk',
+      hard: 'Senior Clerk'
+    };
+    return map[difficultyId] || 'Clerk';
+  }
+
+  mapCareerDifficultyToGame(difficultyId) {
+    const map = {
+      trainee: 'easy',
+      clerk: 'medium',
+      senior: 'hard'
+    };
+    return map[difficultyId] || 'medium';
+  }
+
+  getDefaultNewCareerSlot() {
+    const slots = this.game.getSaveSlots?.() || [];
+    const emptySlot = slots.find((slot) => slot.isEmpty);
+    return emptySlot ? emptySlot.slot : null;
+  }
+
+  handleContinueFromMenu() {
+    const ok = this.game.loadMostRecentSave?.({ startGame: true });
+    if (!ok) {
+      this.showNotification('No save data found for Continue.', 'warning');
+      this.showMenu();
+    }
+  }
+
+  handleExitFromMenu() {
+    const settings = this.game.getSettings?.() || {};
+    if (settings.confirmBeforeQuitting !== false) {
+      this.menuView = 'exit_confirm';
+      this.renderMenuPanel();
+      return;
+    }
+
+    this.game.stopServiceTicker?.();
+    window.location.reload();
+  }
+
+  handleMenuPanelAction(button) {
+    const action = button.dataset.menuAction;
+    const slot = Number(button.dataset.slot);
+
+    if (action === 'back') {
+      this.menuView = 'main';
+      this.showMenu();
+      return;
+    }
+
+    if (action === 'cancel-exit') {
+      this.menuView = 'main';
+      this.showMenu();
+      return;
+    }
+
+    if (action === 'confirm-exit') {
+      this.game.stopServiceTicker?.();
+      window.location.reload();
+      return;
+    }
+
+    if (action === 'load-slot') {
+      this.pendingDeleteSlot = null;
+      const ok = this.game.loadFromSlot?.(slot, { startGame: true });
+      if (!ok) {
+        this.showNotification(`Unable to load Slot ${slot}.`, 'error');
+      }
+      return;
+    }
+
+    if (action === 'delete-slot') {
+      this.pendingDeleteSlot = slot;
+      this.renderMenuPanel();
+      return;
+    }
+
+    if (action === 'select-new-career-slot') {
+      this.selectedNewCareerSlot = Number(slot || 1);
+      this.renderMenuPanel();
+      return;
+    }
+
+    if (action === 'cancel-delete-slot') {
+      this.pendingDeleteSlot = null;
+      this.renderMenuPanel();
+      return;
+    }
+
+    if (action === 'confirm-delete-slot') {
+      const ok = this.game.deleteSaveSlot?.(slot);
+      this.pendingDeleteSlot = null;
+      this.showNotification(ok ? `Slot ${slot} deleted.` : `Failed to delete Slot ${slot}.`, ok ? 'success' : 'error');
+      this.showMenu();
+      return;
+    }
+
+    if (action === 'start-career-slot') {
+      const nameInput = this.elements.menuPanel?.querySelector('#new-career-name');
+      const difficultyInput = this.elements.menuPanel?.querySelector('#new-career-difficulty');
+      const selectedSlot = Number(slot || 1);
+      const careerName = String(nameInput?.value || 'New Clerk').trim() || 'New Clerk';
+      const difficulty = this.mapCareerDifficultyToGame(difficultyInput?.value || 'clerk');
+
+      const ok = this.game.startNewCareer?.({
+        slotIndex: selectedSlot,
+        careerName,
+        difficulty
+      });
+      if (!ok) {
+        this.showNotification('Unable to start a new career with the selected options.', 'error');
+      }
+    }
+  }
+
+  handleMenuPanelChange(target) {
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
+    const key = target.dataset.settingKey;
+    if (!key) return;
+
+    const isToggle = target instanceof HTMLInputElement && target.type === 'checkbox';
+    const settingValue = isToggle ? target.checked : target.value;
+    const ok = this.game.setSetting?.(key, settingValue);
+    if (!ok) return;
+
+    if (key === 'developerMode') {
+      const enabled = Boolean(settingValue);
+      this.game.setDevelopmentMode?.(enabled);
+      this.setDevControlsVisibility(enabled, { persist: true, notify: true });
+    }
+
+    if (key === 'fullscreen') {
+      this.applyFullscreenSetting(Boolean(settingValue));
+    }
+
+    this.applyVisualSettings();
+    this.renderMenuPanel();
+  }
+
+  applyFullscreenSetting(enabled) {
+    if (enabled) {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+      return;
+    }
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
   }
 
   showShiftStart(data) {

@@ -57,6 +57,10 @@ const DIFFICULTY_CONFIG = Object.freeze({
 });
 
 export class Game {
+  static SAVE_SLOT_COUNT = 4;
+  static LEGACY_SAVE_KEY = 'redTapeSave';
+  static SAVE_SLOT_KEY_PREFIX = 'redTapeSave.slot.';
+
   constructor() {
     this.player = null;
     this.npcGenerator = null;
@@ -68,6 +72,7 @@ export class Game {
     this.dialogueData = null;
     this.photoLibrary = { photos: [] };
     this.photoLibraryById = new Map();
+    this.activeSaveSlot = null;
 
     // Centralized game state
     this.gameState = {
@@ -119,7 +124,16 @@ export class Game {
 
   getDefaultSettings() {
     return {
+      masterVolume: 100,
+      musicVolume: 80,
+      sfxVolume: 80,
+      fullscreen: false,
+      uiScale: 100,
+      textSize: 100,
+      confirmBeforeQuitting: true,
       autoSave: true,
+      tooltips: true,
+      developerMode: false,
       reducedMotion: false,
       highContrast: false
     };
@@ -129,7 +143,16 @@ export class Game {
     const defaults = this.getDefaultSettings();
     const source = rawSettings && typeof rawSettings === 'object' ? rawSettings : this.gameState.settings;
     const normalized = {
+      masterVolume: Math.max(0, Math.min(100, Number(source?.masterVolume ?? defaults.masterVolume) || defaults.masterVolume)),
+      musicVolume: Math.max(0, Math.min(100, Number(source?.musicVolume ?? defaults.musicVolume) || defaults.musicVolume)),
+      sfxVolume: Math.max(0, Math.min(100, Number(source?.sfxVolume ?? defaults.sfxVolume) || defaults.sfxVolume)),
+      fullscreen: Boolean(source?.fullscreen),
+      uiScale: Math.max(80, Math.min(140, Number(source?.uiScale ?? defaults.uiScale) || defaults.uiScale)),
+      textSize: Math.max(80, Math.min(140, Number(source?.textSize ?? defaults.textSize) || defaults.textSize)),
+      confirmBeforeQuitting: source?.confirmBeforeQuitting !== false,
       autoSave: source?.autoSave !== false,
+      tooltips: source?.tooltips !== false,
+      developerMode: Boolean(source?.developerMode ?? this.gameState.developmentMode),
       reducedMotion: Boolean(source?.reducedMotion),
       highContrast: Boolean(source?.highContrast)
     };
@@ -137,6 +160,7 @@ export class Game {
       ...defaults,
       ...normalized
     };
+    this.gameState.developmentMode = this.gameState.settings.developerMode;
     return this.gameState.settings;
   }
 
@@ -148,13 +172,39 @@ export class Game {
     if (!key || typeof key !== 'string') return false;
     this.initializeSettings();
 
-    const knownKeys = new Set(['autoSave', 'reducedMotion', 'highContrast']);
-    if (!knownKeys.has(key)) return false;
+    const schema = {
+      masterVolume: { type: 'number', min: 0, max: 100 },
+      musicVolume: { type: 'number', min: 0, max: 100 },
+      sfxVolume: { type: 'number', min: 0, max: 100 },
+      fullscreen: { type: 'boolean' },
+      uiScale: { type: 'number', min: 80, max: 140 },
+      textSize: { type: 'number', min: 80, max: 140 },
+      confirmBeforeQuitting: { type: 'boolean' },
+      autoSave: { type: 'boolean' },
+      tooltips: { type: 'boolean' },
+      developerMode: { type: 'boolean' },
+      reducedMotion: { type: 'boolean' },
+      highContrast: { type: 'boolean' }
+    };
 
-    const normalizedValue = Boolean(value);
+    const settingRule = schema[key];
+    if (!settingRule) return false;
+
+    let normalizedValue;
+    if (settingRule.type === 'number') {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) return false;
+      normalizedValue = Math.max(settingRule.min, Math.min(settingRule.max, Math.round(numericValue)));
+    } else {
+      normalizedValue = Boolean(value);
+    }
+
     if (this.gameState.settings[key] === normalizedValue) return true;
 
     this.gameState.settings[key] = normalizedValue;
+    if (key === 'developerMode') {
+      this.gameState.developmentMode = normalizedValue;
+    }
     this.logEvent('SETTING_CHANGED', { key, value: normalizedValue });
 
     if (key === 'autoSave' && normalizedValue) {
@@ -170,12 +220,120 @@ export class Game {
     return true;
   }
 
-  hasSaveData() {
+  normalizeSaveSlot(slotIndex) {
+    const parsed = Number(slotIndex);
+    if (!Number.isInteger(parsed)) return null;
+    if (parsed < 1 || parsed > Game.SAVE_SLOT_COUNT) return null;
+    return parsed;
+  }
+
+  getSaveSlotKey(slotIndex) {
+    const normalizedSlot = this.normalizeSaveSlot(slotIndex);
+    if (!normalizedSlot) return null;
+    return `${Game.SAVE_SLOT_KEY_PREFIX}${normalizedSlot}`;
+  }
+
+  getLegacySaveData() {
     try {
-      return Boolean(localStorage.getItem('redTapeSave'));
+      const data = localStorage.getItem(Game.LEGACY_SAVE_KEY);
+      if (!data) return null;
+      const parsed = JSON.parse(data);
+      return this.migrateSave(parsed);
     } catch (_error) {
-      return false;
+      return null;
     }
+  }
+
+  getSaveDataFromSlot(slotIndex) {
+    const key = this.getSaveSlotKey(slotIndex);
+    if (!key) return null;
+    try {
+      const data = localStorage.getItem(key);
+      if (!data) return null;
+      const parsed = JSON.parse(data);
+      return this.migrateSave(parsed);
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  getSaveSlotSummary(slotIndex) {
+    const normalizedSlot = this.normalizeSaveSlot(slotIndex);
+    if (!normalizedSlot) return null;
+    const save = this.getSaveDataFromSlot(normalizedSlot);
+    if (!save) {
+      return {
+        slot: normalizedSlot,
+        isEmpty: true,
+        careerName: 'Empty Slot',
+        shiftNumber: 0,
+        difficulty: 'easy',
+        difficultyLabel: this.getDifficultyProfile('easy').label,
+        lastPlayedAt: null
+      };
+    }
+
+    const careerName = String(save?.player?.name || '').trim() || 'Unnamed Career';
+    const shiftNumber = Math.max(0, Number(save?.player?.shiftNumber || 0));
+    const difficulty = this.normalizeDifficulty(save?.gameState?.difficulty || 'easy');
+    const lastPlayedAt = save?.gameState?.lastPlayedAt || null;
+
+    return {
+      slot: normalizedSlot,
+      isEmpty: false,
+      careerName,
+      shiftNumber,
+      difficulty,
+      difficultyLabel: this.getDifficultyProfile(difficulty).label,
+      lastPlayedAt
+    };
+  }
+
+  getSaveSlots() {
+    const slots = [];
+    for (let slot = 1; slot <= Game.SAVE_SLOT_COUNT; slot++) {
+      slots.push(this.getSaveSlotSummary(slot));
+    }
+    return slots;
+  }
+
+  getMostRecentSaveSlot() {
+    const savedSlots = this.getSaveSlots().filter((slot) => !slot.isEmpty);
+    if (!savedSlots.length) return null;
+
+    savedSlots.sort((a, b) => {
+      const timeA = a.lastPlayedAt ? Date.parse(a.lastPlayedAt) : 0;
+      const timeB = b.lastPlayedAt ? Date.parse(b.lastPlayedAt) : 0;
+      return timeB - timeA;
+    });
+
+    return savedSlots[0].slot;
+  }
+
+  ensureLegacySlotMigration() {
+    const hasSlotSave = this.getSaveSlots().some((slot) => !slot.isEmpty);
+    if (hasSlotSave) return;
+
+    const legacySave = this.getLegacySaveData();
+    if (!legacySave) return;
+
+    const slotKey = this.getSaveSlotKey(1);
+    if (!slotKey) return;
+
+    try {
+      localStorage.setItem(slotKey, JSON.stringify(legacySave));
+    } catch (_error) {
+      // Ignore migration errors in restricted storage contexts.
+    }
+  }
+
+  hasAnySaveData() {
+    if (this.getMostRecentSaveSlot()) return true;
+    return Boolean(this.getLegacySaveData());
+  }
+
+  hasSaveData() {
+    return this.hasAnySaveData();
   }
 
   saveNow() {
@@ -199,6 +357,35 @@ export class Game {
       settings: this.getSettings()
     });
     return true;
+  }
+
+  loadFromSlot(slotIndex, options = {}) {
+    const normalizedSlot = this.normalizeSaveSlot(slotIndex);
+    if (!normalizedSlot) return false;
+    const loaded = this.loadGame({ slotIndex: normalizedSlot });
+    if (!loaded) return false;
+
+    if (options.startGame) {
+      this.startShift();
+      return true;
+    }
+
+    this.state = GamePhase.MENU;
+    this.emit('stateChange', { state: this.state });
+    return true;
+  }
+
+  loadMostRecentSave(options = {}) {
+    const slot = this.getMostRecentSaveSlot();
+    if (!slot) {
+      const loadedLegacy = this.loadGame();
+      if (!loadedLegacy) return false;
+      if (options.startGame) {
+        this.startShift();
+      }
+      return true;
+    }
+    return this.loadFromSlot(slot, options);
   }
 
   get state() {
@@ -281,6 +468,8 @@ export class Game {
 
   setDevelopmentMode(enabled) {
     this.gameState.developmentMode = Boolean(enabled);
+    this.initializeSettings();
+    this.gameState.settings.developerMode = this.gameState.developmentMode;
     this.logEvent('DEVELOPMENT_MODE_CHANGED', { enabled: this.gameState.developmentMode });
     this.saveGame();
     this.emit('event', {
@@ -1403,6 +1592,7 @@ export class Game {
     this.shiftManager = new ShiftManager(balancing, dialogue);
 
     // Try to load saved game
+    this.ensureLegacySlotMigration();
     this.loadGame();
     this.initializeSettings();
 
@@ -1977,16 +2167,11 @@ export class Game {
   }
 
   // Save/Load
-  saveGame(options = {}) {
-    const force = Boolean(options?.force);
-    this.initializeSettings();
-    if (!force && this.gameState.settings.autoSave === false) {
-      return false;
-    }
-
-    const saveData = {
+  buildSaveData(slotIndex = this.activeSaveSlot) {
+    this.gameState.lastPlayedAt = new Date().toISOString();
+    return {
       player: this.player.toJSON(),
-      npcPool: this.npcPool.map(n => n.toJSON()),
+      npcPool: this.npcPool.map((n) => n.toJSON()),
       globalSeed: this.npcGenerator.globalSeed,
       gameState: {
         seed: this.gameState.seed,
@@ -2002,12 +2187,32 @@ export class Game {
         pendingDocRequest: this.gameState.pendingDocRequest,
         agencyDatabase: this.gameState.agencyDatabase,
         weeklyDirective: this.gameState.weeklyDirective,
-        settings: this.gameState.settings
+        settings: this.gameState.settings,
+        lastPlayedAt: this.gameState.lastPlayedAt,
+        slotIndex: slotIndex || null
       },
       version: Game.CURRENT_SAVE_VERSION
     };
+  }
+
+  saveGame(options = {}) {
+    const force = Boolean(options?.force);
+    const requestedSlot = this.normalizeSaveSlot(options?.slotIndex);
+    this.initializeSettings();
+    if (!force && this.gameState.settings.autoSave === false) {
+      return false;
+    }
+
+    const targetSlot = requestedSlot || this.activeSaveSlot || this.getMostRecentSaveSlot() || 1;
+    const slotKey = this.getSaveSlotKey(targetSlot);
+    if (!slotKey) return false;
+
+    const saveData = this.buildSaveData(targetSlot);
     try {
-      localStorage.setItem('redTapeSave', JSON.stringify(saveData));
+      localStorage.setItem(slotKey, JSON.stringify(saveData));
+      // Maintain legacy key for backward compatibility with existing tooling and old builds.
+      localStorage.setItem(Game.LEGACY_SAVE_KEY, JSON.stringify(saveData));
+      this.activeSaveSlot = targetSlot;
       return true;
     } catch (e) {
       console.warn('Failed to save game:', e);
@@ -2015,66 +2220,119 @@ export class Game {
     }
   }
 
-  loadGame() {
-    try {
-      const data = localStorage.getItem('redTapeSave');
-      if (data) {
-        const parsed = JSON.parse(data);
-        const save = this.migrateSave(parsed);
-        if (!save) return false;
+  applyLoadedSave(save) {
+    if (!save) return false;
 
-        this.player = PlayerState.fromJSON(save.player);
-        this.updateDepartmentUnlocks();
-        this.npcGenerator.setGlobalSeed(save.globalSeed || Date.now());
+    this.player = PlayerState.fromJSON(save.player);
+    this.updateDepartmentUnlocks();
+    this.npcGenerator.setGlobalSeed(save.globalSeed || Date.now());
 
-        if (save.gameState?.seed) {
-          this.setSeed(save.gameState.seed);
-          this.gameState.eventLog = save.gameState.eventLog || [];
-          this.gameState.eventCounter = save.gameState.eventCounter || 0;
-          this.gameState.difficulty = this.normalizeDifficulty(save.gameState.difficulty || 'easy');
-          this.gameState.developmentMode = Boolean(save.gameState.developmentMode);
-          this.gameState.caseChecklist = save.gameState.caseChecklist || {};
-          this.gameState.manualOpen = save.gameState.manualOpen !== false;
-          this.gameState.pendingAppeals = save.gameState.pendingAppeals || [];
-          this.gameState.auditHistory = save.gameState.auditHistory || [];
-          this.gameState.pendingDocumentReturns = save.gameState.pendingDocumentReturns || {};
-          this.gameState.pendingDocRequest = save.gameState.pendingDocRequest || null;
-          this.gameState.agencyDatabase = save.gameState.agencyDatabase || { peopleByNpcId: {}, vehiclesByVin: {} };
-          this.gameState.weeklyDirective = save.gameState.weeklyDirective || this.getDefaultWeeklyDirective();
-          this.gameState.settings = save.gameState.settings || this.getDefaultSettings();
-        }
-
-        this.initializeWeeklyDirective();
-        this.initializeSettings();
-
-        this.npcPool = Array.isArray(save.npcPool)
-          ? save.npcPool.map(n => NPC.fromJSON(n))
-          : [];
-        for (const npc of this.npcPool) {
-          if (!npc.routing) npc.routing = { nextEligibleDepts: ['DMV'], cooldowns: {} };
-          if (!npc.routing.cooldowns) npc.routing.cooldowns = {};
-          npc.routing.nextEligibleDepts = this.computeNextEligibleDepartments(npc);
-        }
-
-        return true;
-      }
-    } catch (e) {
-      console.warn('Failed to load save:', e);
+    if (save.gameState?.seed) {
+      this.setSeed(save.gameState.seed);
+      this.gameState.eventLog = save.gameState.eventLog || [];
+      this.gameState.eventCounter = save.gameState.eventCounter || 0;
+      this.gameState.difficulty = this.normalizeDifficulty(save.gameState.difficulty || 'easy');
+      this.gameState.developmentMode = Boolean(save.gameState.developmentMode);
+      this.gameState.caseChecklist = save.gameState.caseChecklist || {};
+      this.gameState.manualOpen = save.gameState.manualOpen !== false;
+      this.gameState.pendingAppeals = save.gameState.pendingAppeals || [];
+      this.gameState.auditHistory = save.gameState.auditHistory || [];
+      this.gameState.pendingDocumentReturns = save.gameState.pendingDocumentReturns || {};
+      this.gameState.pendingDocRequest = save.gameState.pendingDocRequest || null;
+      this.gameState.agencyDatabase = save.gameState.agencyDatabase || { peopleByNpcId: {}, vehiclesByVin: {} };
+      this.gameState.weeklyDirective = save.gameState.weeklyDirective || this.getDefaultWeeklyDirective();
+      this.gameState.settings = save.gameState.settings || this.getDefaultSettings();
+      this.gameState.lastPlayedAt = save.gameState.lastPlayedAt || null;
     }
-    return false;
+
+    this.initializeWeeklyDirective();
+    this.initializeSettings();
+
+    this.npcPool = Array.isArray(save.npcPool)
+      ? save.npcPool.map((n) => NPC.fromJSON(n))
+      : [];
+    for (const npc of this.npcPool) {
+      if (!npc.routing) npc.routing = { nextEligibleDepts: ['DMV'], cooldowns: {} };
+      if (!npc.routing.cooldowns) npc.routing.cooldowns = {};
+      npc.routing.nextEligibleDepts = this.computeNextEligibleDepartments(npc);
+    }
+
+    return true;
   }
 
-  newGame() {
+  loadGame(options = {}) {
+    const requestedSlot = this.normalizeSaveSlot(options?.slotIndex);
+
+    try {
+      let save = null;
+      let sourceSlot = null;
+
+      if (requestedSlot) {
+        save = this.getSaveDataFromSlot(requestedSlot);
+        sourceSlot = requestedSlot;
+      } else {
+        const preferredSlot = this.activeSaveSlot || this.getMostRecentSaveSlot();
+        if (preferredSlot) {
+          save = this.getSaveDataFromSlot(preferredSlot);
+          sourceSlot = preferredSlot;
+        }
+
+        if (!save) {
+          save = this.getLegacySaveData();
+        }
+      }
+
+      if (!save) return false;
+      const applied = this.applyLoadedSave(save);
+      if (!applied) return false;
+
+      this.activeSaveSlot = sourceSlot;
+      return true;
+    } catch (e) {
+      console.warn('Failed to load save:', e);
+      return false;
+    }
+  }
+
+  deleteSaveSlot(slotIndex) {
+    const normalizedSlot = this.normalizeSaveSlot(slotIndex);
+    if (!normalizedSlot) return false;
+
+    const key = this.getSaveSlotKey(normalizedSlot);
+    if (!key) return false;
+
+    try {
+      localStorage.removeItem(key);
+      if (this.activeSaveSlot === normalizedSlot) {
+        this.activeSaveSlot = this.getMostRecentSaveSlot();
+      }
+
+      const mostRecentSlot = this.getMostRecentSaveSlot();
+      if (!mostRecentSlot) {
+        localStorage.removeItem(Game.LEGACY_SAVE_KEY);
+      } else {
+        const newestSave = this.getSaveDataFromSlot(mostRecentSlot);
+        if (newestSave) {
+          localStorage.setItem(Game.LEGACY_SAVE_KEY, JSON.stringify(newestSave));
+        }
+      }
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  resetCareerState({ careerName = 'New Clerk', difficulty = 'easy' } = {}) {
     this.stopServiceTicker();
-    localStorage.removeItem('redTapeSave');
     this.player = new PlayerState();
+    this.player.name = String(careerName || 'New Clerk').trim() || 'New Clerk';
     this.npcPool = [];
     const freshSeed = Date.now();
     this.npcGenerator.setGlobalSeed(freshSeed);
     this.setSeed(freshSeed);
     this.gameState.eventLog = [];
     this.gameState.eventCounter = 0;
-    this.gameState.difficulty = 'easy';
+    this.gameState.difficulty = this.normalizeDifficulty(difficulty);
     this.gameState.developmentMode = false;
     this.gameState.caseChecklist = {};
     this.gameState.manualOpen = true;
@@ -2085,6 +2343,25 @@ export class Game {
     this.gameState.agencyDatabase = { peopleByNpcId: {}, vehiclesByVin: {} };
     this.gameState.weeklyDirective = this.getDefaultWeeklyDirective();
     this.gameState.settings = this.getDefaultSettings();
+    this.initializeSettings();
+  }
+
+  startNewCareer({ slotIndex = 1, careerName = 'New Clerk', difficulty = 'easy' } = {}) {
+    const normalizedSlot = this.normalizeSaveSlot(slotIndex);
+    if (!normalizedSlot) return false;
+
+    this.activeSaveSlot = normalizedSlot;
+    this.resetCareerState({ careerName, difficulty });
+    this.saveGame({ force: true, slotIndex: normalizedSlot });
+    this.startShift();
+    return true;
+  }
+
+  newGame() {
+    // Backward-compatible default behavior: replace slot 1 and start at menu.
+    this.activeSaveSlot = 1;
+    this.resetCareerState({ careerName: 'New Clerk', difficulty: 'easy' });
+    this.saveGame({ force: true, slotIndex: 1 });
     this.state = GamePhase.MENU;
     this.emit('stateChange', { state: this.state });
   }
