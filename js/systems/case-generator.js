@@ -8,13 +8,14 @@ export class CaseGenerator {
     this.photoLibrary = photoLibrary;
   }
 
-  generateCase(npc, dept, shiftNumber, difficultyProfile = {}) {
+  generateCase(npc, dept, shiftNumber, difficultyProfile = {}, options = {}) {
     const rng = new SeededRNG(npc.rng.masterSeed + shiftNumber * 31);
     const deptConfig = this.catalogs.departments[dept];
     const archetype = this.catalogs.archetypes.find(a => a.id === npc.archetype);
+    const allowedRequestTypes = Array.isArray(options?.allowedRequestTypes) ? options.allowedRequestTypes : null;
 
     // Determine request type
-    const requestType = this.pickRequestType(rng, archetype, deptConfig);
+    const requestType = this.pickRequestType(rng, archetype, deptConfig, allowedRequestTypes);
     const configuredRequiredDocs = deptConfig.requiredDocsByRequest[requestType] || [];
     const requiredDocs = this.getRequiredDocsForRequest(requestType, configuredRequiredDocs, npc);
     const fee = deptConfig.fees[requestType] || 0;
@@ -60,14 +61,22 @@ export class CaseGenerator {
     return required;
   }
 
-  pickRequestType(rng, archetype, deptConfig) {
-    if (archetype && archetype.commonRequests && archetype.commonRequests.length > 0) {
+  pickRequestType(rng, archetype, deptConfig, allowedRequestTypes = null) {
+    const configuredRequests = Array.isArray(deptConfig?.requestTypes) ? deptConfig.requestTypes : [];
+    const deptRequests = Array.isArray(allowedRequestTypes) && allowedRequestTypes.length
+      ? configuredRequests.filter((requestType) => allowedRequestTypes.includes(requestType))
+      : configuredRequests;
+    const preferredRequests = Array.isArray(archetype?.commonRequests)
+      ? archetype.commonRequests.filter((requestType) => deptRequests.includes(requestType))
+      : [];
+
+    if (preferredRequests.length > 0) {
       // 70% chance to use archetype-preferred request
       if (rng.chance(0.7)) {
-        return rng.pick(archetype.commonRequests);
+        return rng.pick(preferredRequests);
       }
     }
-    return rng.pick(deptConfig.requestTypes);
+    return rng.pick(deptRequests);
   }
 
   generateDocuments(rng, npc, archetype, requestType, requiredDocs, difficultyProfile = {}) {
@@ -194,7 +203,7 @@ export class CaseGenerator {
             eyeColor,
             hairColor,
             organDonor: donorLabel,
-            ssn: npc?.identity?.ssn || npc?.identity?.ssnMasked || 'XXX-XX-0000',
+            ssn: npc?.identity?.ssn || npc?.identity?.ssnMasked || 'XXX-XX-X0000',
             ertc: `${rng.pick(['E0', 'E1', 'E2'])}${rng.nextInt(10, 99)}-${rng.pick(['R0', 'R1', 'R2'])}${rng.nextInt(10, 99)}-${rng.pick(['T0', 'T1', 'T2'])}${rng.nextInt(10, 99)}`
           };
         }
@@ -773,13 +782,21 @@ export class CaseGenerator {
       parkingPermit: 'Parking Permit',
       releaseForm: 'Release Form',
       policeReport: 'Police Report',
-      proofOfOwnership: 'Proof of Ownership'
+      proofOfOwnership: 'Proof of Ownership',
+      sitePlan: 'Site Plan',
+      zoningClearance: 'Zoning Clearance',
+      businessRegistration: 'Business Registration',
+      taxClearance: 'Tax Clearance',
+      eventPlan: 'Event Plan',
+      neighborhoodConsent: 'Neighborhood Consent',
+      propertyDeed: 'Property Deed',
+      inspectionChecklist: 'Inspection Checklist'
     };
     return names[docType] || docType;
   }
 
   isNonExpiringDocument(docType) {
-    return docType === 'birthCertificate';
+    return docType === 'birthCertificate' || docType === 'socialSecurityCard';
   }
 
   formatRequestType(requestType) {

@@ -3,6 +3,12 @@ import { NPCGenerator } from './systems/npc-generator.js';
 import { CaseGenerator } from './systems/case-generator.js';
 import { SupervisorSystem } from './systems/supervisor.js';
 import { ShiftManager } from './systems/shift-manager.js';
+import {
+  buildCareerSnapshot,
+  createInitialProgressionState,
+  evaluateShiftForProgression,
+  normalizeProgressionState
+} from './systems/progression-system.js';
 import { SeededRNG } from './models/rng.js';
 import { NPC, Flag } from './models/npc.js';
 
@@ -20,39 +26,79 @@ export const GamePhase = Object.freeze({
 const DIFFICULTY_CONFIG = Object.freeze({
   easy: {
     id: 'easy',
-    label: 'Easy',
-    includeSupportingChecklist: true,
+    label: 'Small Town Government',
+    checklistMode: 'full',
+    forgedHintMode: 'subtle',
+    bribeTone: 'obvious',
+    shiftFeedbackMode: 'detailed',
     missingDocMultiplier: 0.8,
     fraudMultiplier: 0.75,
     documentErrorMultiplier: 0.7,
     wrongFormMultiplier: 0.75,
     inconsistencyMultiplier: 0.75,
-    casePatienceMultiplier: 1.2,
-    timePerCustomerMultiplier: 1.0
+    casePatienceMultiplier: 1.28,
+    timePerCustomerMultiplier: 0.95,
+    misleadingClaimChance: 0.05,
+    staffingCutChance: 0,
+    silentAuditChance: 0,
+    moraleEnabled: false
   },
   medium: {
     id: 'medium',
-    label: 'Medium',
-    includeSupportingChecklist: false,
+    label: 'County Seat',
+    checklistMode: 'category',
+    forgedHintMode: 'none',
+    bribeTone: 'natural',
+    shiftFeedbackMode: 'summary',
     missingDocMultiplier: 1.0,
     fraudMultiplier: 1.0,
     documentErrorMultiplier: 1.0,
     wrongFormMultiplier: 1.0,
     inconsistencyMultiplier: 1.0,
     casePatienceMultiplier: 1.0,
-    timePerCustomerMultiplier: 1.0
+    timePerCustomerMultiplier: 1.0,
+    misleadingClaimChance: 0.12,
+    staffingCutChance: 0,
+    silentAuditChance: 0,
+    moraleEnabled: false
   },
   hard: {
     id: 'hard',
-    label: 'Hard',
-    includeSupportingChecklist: false,
+    label: 'State Capital',
+    checklistMode: 'none',
+    forgedHintMode: 'none',
+    bribeTone: 'disguised',
+    shiftFeedbackMode: 'summary',
     missingDocMultiplier: 1.25,
     fraudMultiplier: 1.35,
     documentErrorMultiplier: 1.4,
     wrongFormMultiplier: 1.45,
     inconsistencyMultiplier: 1.35,
     casePatienceMultiplier: 0.78,
-    timePerCustomerMultiplier: 1.25
+    timePerCustomerMultiplier: 1.35,
+    misleadingClaimChance: 0.28,
+    staffingCutChance: 0,
+    silentAuditChance: 0,
+    moraleEnabled: false
+  },
+  nightmare: {
+    id: 'nightmare',
+    label: 'DOGE Is Watching',
+    checklistMode: 'none',
+    forgedHintMode: 'none',
+    bribeTone: 'disguised',
+    shiftFeedbackMode: 'score_only',
+    missingDocMultiplier: 1.45,
+    fraudMultiplier: 1.6,
+    documentErrorMultiplier: 1.55,
+    wrongFormMultiplier: 1.6,
+    inconsistencyMultiplier: 1.5,
+    casePatienceMultiplier: 0.64,
+    timePerCustomerMultiplier: 1.55,
+    misleadingClaimChance: 0.42,
+    staffingCutChance: 0.22,
+    silentAuditChance: 0.33,
+    moraleEnabled: true
   }
 });
 
@@ -109,6 +155,11 @@ export class Game {
         memo: 'Standard operations this week.',
         sourceWeek: 0
       },
+      shiftCaseOutcomes: [],
+      activeSilentAudit: null,
+      shiftStaffingCut: false,
+      morale: 100,
+      resignationTriggered: false,
       settings: this.getDefaultSettings()
     };
 
@@ -120,7 +171,7 @@ export class Game {
     this.onEvent = null;
   }
 
-  static CURRENT_SAVE_VERSION = 6;
+  static CURRENT_SAVE_VERSION = 8;
 
   getDefaultSettings() {
     return {
@@ -449,6 +500,206 @@ export class Game {
     }));
   }
 
+  getCurrentDifficultyBehavior() {
+    const profile = this.getDifficultyProfile();
+    return {
+      checklistMode: profile.checklistMode || 'none',
+      forgedHintMode: profile.forgedHintMode || 'none',
+      bribeTone: profile.bribeTone || 'natural',
+      shiftFeedbackMode: profile.shiftFeedbackMode || 'summary'
+    };
+  }
+
+  initializeDifficultyState() {
+    this.gameState.shiftCaseOutcomes = Array.isArray(this.gameState.shiftCaseOutcomes)
+      ? this.gameState.shiftCaseOutcomes
+      : [];
+    this.gameState.activeSilentAudit = this.gameState.activeSilentAudit && typeof this.gameState.activeSilentAudit === 'object'
+      ? this.gameState.activeSilentAudit
+      : null;
+    this.gameState.shiftStaffingCut = Boolean(this.gameState.shiftStaffingCut);
+    this.gameState.morale = Math.max(0, Math.min(100, Number(this.gameState.morale ?? 100) || 100));
+    this.gameState.resignationTriggered = Boolean(this.gameState.resignationTriggered);
+  }
+
+  buildMoraleCommentary(moraleValue = this.gameState.morale) {
+    const morale = Math.max(0, Math.min(100, Number(moraleValue || 0)));
+    if (morale >= 75) return 'You whisper to yourself: stay focused, one file at a time.';
+    if (morale >= 50) return 'Your coffee has gone cold and your hands feel heavier on each stamp.';
+    if (morale >= 30) return 'You catch yourself staring at the resignation form in the drawer.';
+    if (morale >= 15) return 'Your inner monologue is just: do not break down at the window.';
+    return 'You can barely keep the desk together. Every decision feels impossible.';
+  }
+
+  getMoraleSnapshot() {
+    const profile = this.getDifficultyProfile();
+    if (!profile.moraleEnabled) return null;
+
+    const morale = Math.max(0, Math.min(100, Number(this.gameState.morale ?? 100) || 100));
+    const band = morale >= 75
+      ? 'steady'
+      : morale >= 50
+        ? 'strained'
+        : morale >= 30
+          ? 'frayed'
+          : morale >= 15
+            ? 'critical'
+            : 'collapse';
+
+    return {
+      value: morale,
+      band,
+      commentary: this.buildMoraleCommentary(morale)
+    };
+  }
+
+  updateMoraleAfterShift(shiftResult, complianceReport = null) {
+    const profile = this.getDifficultyProfile();
+    if (!profile.moraleEnabled) {
+      this.gameState.morale = 100;
+      this.gameState.resignationTriggered = false;
+      return { enabled: false, value: 100, delta: 0, triggered: false };
+    }
+
+    const perf = this.player.performance.currentShift || {};
+    let delta = 0;
+    const score = Number(shiftResult?.score || 0);
+    const violations = Number(complianceReport?.violations || 0);
+
+    if (score >= 90) delta += 6;
+    else if (score >= 80) delta += 3;
+    else if (score >= 70) delta += 0;
+    else if (score >= 60) delta -= 7;
+    else if (score >= 50) delta -= 12;
+    else delta -= 18;
+
+    delta -= Number(perf?.policyErrors?.major || 0) * 10;
+    delta -= Number(perf?.policyErrors?.minor || 0) * 4;
+    delta -= Number(perf?.complaints || 0) * 3;
+    delta -= Number(perf?.bribesAccepted || 0) * 12;
+    delta -= violations * 4;
+
+    if (shiftResult?.isClean) {
+      delta += 4;
+    }
+
+    this.gameState.morale = Math.max(0, Math.min(100, Math.round(Number(this.gameState.morale || 100) + delta)));
+    const triggered = this.gameState.morale <= 0;
+    this.gameState.resignationTriggered = triggered;
+
+    return {
+      enabled: true,
+      value: this.gameState.morale,
+      delta,
+      triggered,
+      commentary: this.buildMoraleCommentary(this.gameState.morale)
+    };
+  }
+
+  createNightmareShiftModifiers() {
+    const profile = this.getDifficultyProfile();
+    if (profile.id !== 'nightmare') {
+      this.gameState.activeSilentAudit = null;
+      this.gameState.shiftStaffingCut = false;
+      return {
+        silentAudit: false,
+        staffingCut: false,
+        memo: null
+      };
+    }
+
+    const shiftSeed = (this.gameState.seed + this.player.shiftNumber * 911) >>> 0;
+    const rng = new SeededRNG(shiftSeed || Date.now());
+
+    const silentAudit = rng.chance(Number(profile.silentAuditChance || 0));
+    const staffingCut = rng.chance(Number(profile.staffingCutChance || 0));
+
+    this.gameState.activeSilentAudit = silentAudit
+      ? {
+        watchedCases: 0,
+        watchedViolations: 0,
+        sampledCaseIds: []
+      }
+      : null;
+
+    this.gameState.shiftStaffingCut = staffingCut;
+
+    const memo = staffingCut
+      ? 'Staffing memo: your desk absorbs a second queue lane today. Colleague position marked eliminated.'
+      : silentAudit
+        ? 'A silent observer has taken a seat in the corner and has started taking notes.'
+        : null;
+
+    return {
+      silentAudit,
+      staffingCut,
+      memo
+    };
+  }
+
+  maybeRecordSilentAuditOutcome(caseRecord, evaluation) {
+    const audit = this.gameState.activeSilentAudit;
+    if (!audit) return;
+
+    const caseId = String(caseRecord?.caseId || '');
+    const caseSeed = Number(caseId.replace(/[^0-9]/g, '').slice(-6) || 0);
+    const rng = this.getDeterministicRng(caseSeed + 71);
+    if (!rng.chance(0.5)) return;
+
+    audit.watchedCases += 1;
+    audit.sampledCaseIds.push(caseId || `case_${audit.watchedCases}`);
+    if (!evaluation?.correct) {
+      audit.watchedViolations += 1;
+      this.gameState.auditRisk = Math.max(0, Math.min(100, Number(this.gameState.auditRisk || 0) + 4));
+    }
+  }
+
+  buildDifficultyClaimLine(caseData, rng) {
+    const profile = this.getDifficultyProfile();
+    if (!rng.chance(Number(profile.misleadingClaimChance || 0))) return '';
+
+    const requiredDocs = caseData?.caseRecord?.inputs?.requiredDocs || [];
+    const documents = caseData?.documents || {};
+    const missingRequired = requiredDocs.filter((docType) => !documents?.[docType]?.present);
+    if (missingRequired.length > 0) {
+      const docName = this.caseGenerator.formatDocName(missingRequired[0]);
+      return `I already gave you my ${docName} this morning. It should already be in your system.`;
+    }
+
+    const forgedDoc = Object.values(documents).find((doc) => doc?.present && doc?.forged);
+    if (forgedDoc) {
+      return 'Everything is genuine. I had these notarized twice, so no need to inspect too closely.';
+    }
+
+    const blocking = (caseData?.caseRecord?.inputs?.conditions || []).find((condition) => condition?.blocksApproval);
+    if (blocking) {
+      return 'There are no holds or violations on my record. The portal said everything was clear.';
+    }
+
+    return 'I checked the handbook online. This should be an automatic approval.';
+  }
+
+  recordShiftCaseOutcome({ caseRecord, npc, playerDecision, correctAction, evaluation, bribeResult = null }) {
+    this.initializeDifficultyState();
+    this.gameState.shiftCaseOutcomes.push({
+      caseId: caseRecord?.caseId || 'unknown',
+      npcName: npc?.fullName || npc?.npcId || 'Unknown Citizen',
+      correct: Boolean(evaluation?.correct),
+      selectedAction: playerDecision?.action || 'N/A',
+      selectedReason: playerDecision?.reasonCode || '',
+      expectedAction: correctAction?.action || 'N/A',
+      expectedReason: correctAction?.reasonCode || '',
+      explanation: correctAction?.explanation || '',
+      bribeResult: bribeResult || null
+    });
+  }
+
+  returnToMenu() {
+    this.stopServiceTicker();
+    this.state = GamePhase.MENU;
+    this.emit('stateChange', { state: this.state });
+  }
+
   getDifficultyLabel() {
     return this.getDifficultyProfile().label;
   }
@@ -467,9 +718,13 @@ export class Game {
   }
 
   setDevelopmentMode(enabled) {
-    this.gameState.developmentMode = Boolean(enabled);
-    this.initializeSettings();
-    this.gameState.settings.developerMode = this.gameState.developmentMode;
+    const requested = Boolean(enabled);
+    this.initializeSettings({
+      ...this.gameState.settings,
+      developerMode: requested
+    });
+    this.gameState.developmentMode = requested;
+    this.gameState.settings.developerMode = requested;
     this.logEvent('DEVELOPMENT_MODE_CHANGED', { enabled: this.gameState.developmentMode });
     this.saveGame();
     this.emit('event', {
@@ -484,6 +739,8 @@ export class Game {
 
   setDepartment(department) {
     if (!department) return false;
+    // Department selection is progression-driven outside dev mode.
+    if (!this.gameState.developmentMode) return false;
     if (!this.catalogs?.departments?.[department]) return false;
     if (!this.player.unlockedDepartments.includes(department)) return false;
     this.player.department = department;
@@ -494,6 +751,59 @@ export class Game {
       departmentName: this.catalogs.departments[department].name
     });
     return true;
+  }
+
+  initializeProgressionState(seed = this.gameState.seed) {
+    this.player.progressionState = normalizeProgressionState(
+      this.player.progressionState || createInitialProgressionState(seed),
+      seed
+    );
+    this.syncPlayerCareerFromProgression();
+    return this.player.progressionState;
+  }
+
+  getCareerProgressionSnapshot() {
+    this.initializeProgressionState();
+    return buildCareerSnapshot(this.player.progressionState);
+  }
+
+  syncPlayerCareerFromProgression() {
+    const snapshot = buildCareerSnapshot(this.player.progressionState || createInitialProgressionState(this.gameState.seed));
+
+    this.player.department = snapshot.gameplayDepartment;
+    this.player.unlockedDepartments = [
+      'DMV',
+      ...(snapshot.departmentId === 'DMV' ? [] : ['BuildingPermits']),
+      ...(snapshot.departmentId === 'CodeEnforcement' ? ['Impound'] : [])
+    ];
+
+    this.player.role = snapshot.isFinalDepartment && snapshot.isFinalRank
+      ? 'supervisor'
+      : snapshot.rankTitle.toLowerCase().includes('senior')
+        ? 'senior_clerk'
+        : 'clerk';
+
+    const rankProgress = snapshot.rankShiftTarget > 0
+      ? (snapshot.shiftsAtRank / snapshot.rankShiftTarget) * 100
+      : 0;
+    this.player.promotionProgress = Math.max(0, Math.min(100, Math.round(rankProgress)));
+  }
+
+  resolveCareerProgressionAfterShift(shiftResult) {
+    this.initializeProgressionState();
+
+    const progressionResult = evaluateShiftForProgression(this.player.progressionState, {
+      seed: this.gameState.seed,
+      shiftNumber: this.player.shiftNumber,
+      writeUps: this.player.writeUps,
+      isCleanShift: Boolean(shiftResult?.isClean),
+      currentShiftPerformance: this.player.performance.currentShift
+    });
+
+    this.player.progressionState = progressionResult.state;
+    this.syncPlayerCareerFromProgression();
+
+    return progressionResult;
   }
 
   getDisplayTime() {
@@ -576,6 +886,24 @@ export class Game {
     return `${feet}'${String(remainder).padStart(2, '0')}"`;
   }
 
+  normalizeSyntheticSsn(rawValue, fallback = '000000X0000') {
+    const cleaned = String(rawValue || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const digits = cleaned.replace(/[A-Z]/g, '');
+    const letters = cleaned.replace(/[0-9]/g, '');
+    const paddedDigits = (digits + fallback).replace(/[^0-9]/g, '').slice(0, 9).padEnd(9, '0');
+    const marker = (letters[0] || 'X').toUpperCase();
+    const area = paddedDigits.slice(0, 3);
+    const group = paddedDigits.slice(3, 5);
+    const serial = paddedDigits.slice(5, 9);
+    return `${area}-${group}-${marker}${serial}`;
+  }
+
+  maskSyntheticSsn(rawValue) {
+    const normalized = this.normalizeSyntheticSsn(rawValue);
+    const suffix = normalized.split('-')[2] || 'X0000';
+    return `XXX-XX-${suffix}`;
+  }
+
   ensureAgencyPersonRecord(npc) {
     if (!npc?.npcId) return null;
     this.initializeAgencyDatabase();
@@ -601,7 +929,7 @@ export class Game {
         ? 'No'
         : (existing.organDonor || fallbackDonor);
     const resolvedSex = String(existing.sex || npc?.identity?.sex || fallbackSex);
-    const resolvedSsn = String(existing.ssn || npc?.identity?.ssn || npc?.identity?.ssnMasked || 'XXX-XX-0000');
+    const resolvedSsn = this.normalizeSyntheticSsn(existing.ssn || npc?.identity?.ssn || npc?.identity?.ssnMasked || '000000X0000');
 
     const fullName = npc.fullName || `${npc?.identity?.firstName || ''} ${npc?.identity?.lastName || ''}`.trim() || existing.name || 'Unknown';
     const next = {
@@ -653,8 +981,8 @@ export class Game {
     npc.identity.address = person.address || npc.identity.address;
     npc.identity.phone = person.phone || npc.identity.phone;
     npc.identity.email = person.email || npc.identity.email;
-    npc.identity.ssn = person.ssn || npc.identity.ssn;
-    npc.identity.ssnMasked = String(person.ssn || npc.identity.ssnMasked || 'XXX-XX-0000').replace(/^\d{3}-\d{2}-(\d{4})$/, 'XXX-XX-$1');
+    npc.identity.ssn = this.normalizeSyntheticSsn(person.ssn || npc.identity.ssn || npc.identity.ssnMasked || '000000X0000');
+    npc.identity.ssnMasked = this.maskSyntheticSsn(npc.identity.ssn);
     npc.identity.sex = person.sex || npc.identity.sex;
     npc.identity.eyeColor = person.eyeColor || npc.identity.eyeColor;
     npc.identity.hairColor = person.hairColor || npc.identity.hairColor;
@@ -701,7 +1029,7 @@ export class Game {
     next.firstName = String(next.firstName || '').trim() || existing.firstName;
     next.lastName = String(next.lastName || '').trim() || existing.lastName;
     next.dob = String(next.dob || '').trim() || existing.dob;
-    next.ssn = String(next.ssn || '').trim() || existing.ssn;
+    next.ssn = this.normalizeSyntheticSsn(String(next.ssn || '').trim() || existing.ssn || '000000X0000');
     next.address = String(next.address || '').trim() || existing.address;
     next.phone = String(next.phone || '').trim() || existing.phone;
     next.email = String(next.email || '').trim() || existing.email;
@@ -744,7 +1072,7 @@ export class Game {
       const data = doc?.data || {};
       if (!person.dlNumber && data.licenseNumber) person.dlNumber = String(data.licenseNumber);
       if (data.address) person.address = String(data.address);
-      if (data.ssn) person.ssn = String(data.ssn);
+      if (data.ssn) person.ssn = this.normalizeSyntheticSsn(String(data.ssn));
       if (data.sex) person.sex = String(data.sex);
       if (data.eyeColor) person.eyeColor = String(data.eyeColor);
       if (data.hairColor) person.hairColor = String(data.hairColor);
@@ -1041,7 +1369,12 @@ export class Game {
     const queuedCase = this.buildDocumentReturnCase(this.currentCase, this.currentNPC, docType, rng);
     queuedCase.requestFrustrationPenalty = Math.max(0, Number(frustrationPenalty || 0));
     queuedCase.requestedDocWasRequired = Boolean(isRequiredDoc);
-    this.gameState.pendingDocumentReturns[this.currentNPC.npcId] = queuedCase;
+
+    const ticketSeed = `${Date.now().toString(36)}_${this.shiftManager.currentCustomerIndex.toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
+    const returnTicket = `ret_${ticketSeed}`;
+    this.currentNPC.metadata = this.currentNPC.metadata || {};
+    this.currentNPC.metadata.pendingReturnTicket = returnTicket;
+    this.gameState.pendingDocumentReturns[returnTicket] = queuedCase;
 
     this.shiftManager.sendCustomerToBack(this.currentNPC);
     this.logEvent('DOC_REQUESTED', {
@@ -1301,11 +1634,48 @@ export class Game {
     if (npc.hasFlag('IMPOUND_HOLD') && !eligible.includes('Impound')) {
       eligible.unshift('Impound');
     }
-    if (npc.hasFlag('UNPAID_TICKETS') && !eligible.includes('Parking')) {
-      eligible.unshift('Parking');
+    if (npc.hasFlag('UNPAID_TICKETS') && !eligible.includes('DMV')) {
+      eligible.unshift('DMV');
     }
 
     return [...new Set(eligible)].slice(0, 5);
+  }
+
+  isDmvParkingDutiesUnlocked() {
+    const snapshot = this.getCareerProgressionSnapshot();
+    return snapshot.departmentId !== 'DMV' || snapshot.rankIndex >= 2;
+  }
+
+  getAllowedRequestTypesForDepartment(departmentId) {
+    const snapshot = this.getCareerProgressionSnapshot();
+    if (departmentId === snapshot.gameplayDepartment && Array.isArray(snapshot.requestTypes) && snapshot.requestTypes.length) {
+      return [...snapshot.requestTypes];
+    }
+
+    const deptConfig = this.catalogs?.departments?.[departmentId];
+    if (!deptConfig) return [];
+
+    const requestTypes = Array.isArray(deptConfig.requestTypes) ? [...deptConfig.requestTypes] : [];
+    if (departmentId !== 'DMV') return requestTypes;
+
+    const parkingDutyRequests = ['TicketPayment', 'TicketAppeal', 'PermitApplication', 'PermitRenewal'];
+    if (this.isDmvParkingDutiesUnlocked()) {
+      return requestTypes;
+    }
+
+    return requestTypes.filter((requestType) => !parkingDutyRequests.includes(requestType));
+  }
+
+  getCustomerRangeForProgression() {
+    const snapshot = this.getCareerProgressionSnapshot();
+    if (snapshot?.customerRange?.min && snapshot?.customerRange?.max) {
+      return {
+        min: snapshot.customerRange.min,
+        max: snapshot.customerRange.max
+      };
+    }
+
+    return { min: 6, max: 8 };
   }
 
   buildCaseOutcomes(caseRecord, playerDecision, evaluation, correctAction) {
@@ -1370,11 +1740,211 @@ export class Game {
     npc.rng.lastUpdatedShift = this.player.shiftNumber;
   }
 
-  updateDepartmentUnlocks() {
-    const unlocked = new Set(this.player.unlockedDepartments || ['DMV']);
-    if (this.player.shiftsCompleted >= 5) unlocked.add('Parking');
-    if (this.player.shiftsCompleted >= 10) unlocked.add('Impound');
-    this.player.unlockedDepartments = Array.from(unlocked);
+  updateDepartmentUnlocks(options = {}) {
+    const previousUnlocked = new Set(this.player.unlockedDepartments || ['DMV']);
+    const previousDepartment = this.player.department;
+    this.initializeProgressionState();
+    this.syncPlayerCareerFromProgression();
+
+    const normalizedUnlocked = [...this.player.unlockedDepartments];
+    const newlyUnlocked = normalizedUnlocked.filter((departmentId) => !previousUnlocked.has(departmentId));
+    const promotedTo = previousDepartment !== this.player.department ? this.player.department : null;
+
+    return { newlyUnlocked, promotedTo };
+  }
+
+  buildSimulatedShiftPerformance(shiftNumber) {
+    const rng = this.getDeterministicRng((Number(shiftNumber) || 0) * 4099 + 73);
+    const perf = this.player.newShiftPerformance();
+    const difficultyId = this.getDifficultyProfile().id;
+    const difficultyPenalty = difficultyId === 'nightmare'
+      ? 0.16
+      : difficultyId === 'hard'
+        ? 0.11
+        : difficultyId === 'medium'
+          ? 0.06
+          : 0.02;
+
+    const casesProcessed = rng.nextInt(5, 10);
+    const accuracyRate = Math.max(0.55, Math.min(0.97, 0.9 - difficultyPenalty + (rng.next() * 0.14 - 0.07)));
+    const correctDecisions = Math.max(0, Math.min(casesProcessed, Math.round(casesProcessed * accuracyRate)));
+    const incorrectDecisions = Math.max(0, casesProcessed - correctDecisions);
+    const escalations = rng.nextInt(0, Math.min(3, incorrectDecisions + 1));
+    const complaints = rng.nextInt(0, Math.min(4, incorrectDecisions + 2));
+
+    const sentimentPool = ['happy', 'neutral', 'neutral', 'annoyed', 'angry'];
+    perf.casesProcessed = casesProcessed;
+    perf.correctDecisions = correctDecisions;
+    perf.incorrectDecisions = incorrectDecisions;
+    perf.escalations = escalations;
+    perf.complaints = complaints;
+    perf.bribesAccepted = 0;
+    perf.bribesDeclined = rng.nextInt(0, 1);
+    perf.policyErrors.major = rng.chance(Math.min(0.45, incorrectDecisions * 0.08)) ? 1 : 0;
+    perf.policyErrors.minor = rng.nextInt(0, Math.max(0, incorrectDecisions + (perf.policyErrors.major ? 0 : 1)));
+    perf.processingTimes = Array.from({ length: casesProcessed }, () => rng.nextInt(25, 120));
+    perf.customerSentiments = Array.from({ length: casesProcessed }, () => rng.pick(sentimentPool));
+
+    return perf;
+  }
+
+  skipToNextWeekSimulated() {
+    if (!this.gameState.developmentMode) {
+      return { ok: false, message: 'Developer mode is required.' };
+    }
+
+    this.stopServiceTicker();
+
+    const currentShift = Math.max(1, Number(this.player?.shiftNumber || 1));
+    const nextWeekStartShift = Math.floor((currentShift - 1) / 5) * 5 + 6;
+    const finalShiftOfCurrentWeek = nextWeekStartShift - 1;
+    const simulatedShifts = [];
+    let weeklySummary = null;
+
+    for (let shift = currentShift; shift <= finalShiftOfCurrentWeek; shift++) {
+      this.player.shiftNumber = shift;
+      this.player.performance.currentShift = this.buildSimulatedShiftPerformance(shift);
+
+      const shiftResult = this.player.endShift(this.balancing);
+      this.resolveCareerProgressionAfterShift(shiftResult);
+      this.updateDepartmentUnlocks();
+      this.decrementNpcCooldowns();
+
+      simulatedShifts.push({
+        shiftNumber: shift,
+        score: shiftResult.score,
+        earnings: shiftResult.earnings,
+        isClean: shiftResult.isClean
+      });
+
+      this.logEvent('SHIFT_SIMULATED', {
+        shiftNumber: shift,
+        score: shiftResult.score,
+        earnings: shiftResult.earnings,
+        isClean: shiftResult.isClean
+      });
+
+      if (shift % 5 === 0) {
+        weeklySummary = this.resolveEndOfWeek();
+      }
+    }
+
+    // Reset active case context because we intentionally skipped in-progress work.
+    this.currentNPC = null;
+    this.currentCase = null;
+    this.gameState.currentNPC = null;
+    this.gameState.currentCase = null;
+    this.gameState.pendingDocRequest = null;
+    this.gameState.caseWaitRemaining = 0;
+    this.gameState.caseWaitTotal = 0;
+    this.gameState.casePatienceEscalated = false;
+
+    this.startShift();
+    this.saveGame({ force: true });
+
+    return {
+      ok: true,
+      message: `Skipped to week ${Math.ceil(this.player.shiftNumber / 5)}. Shift ${this.player.shiftNumber} is ready.`,
+      simulatedShifts,
+      weeklySummary,
+      nextShiftNumber: this.player.shiftNumber
+    };
+  }
+
+  skipToShiftEndSimulated() {
+    if (!this.gameState.developmentMode) {
+      return { ok: false, message: 'Developer mode is required.' };
+    }
+
+    if (!this.shiftManager || !this.player) {
+      return { ok: false, message: 'Shift systems are not initialized.' };
+    }
+
+    if (this.state === GamePhase.REVIEW) {
+      return { ok: false, message: 'Shift already ended. You are on the review screen.' };
+    }
+
+    if (!this.shiftManager.isActive && this.shiftManager.isShiftOver()) {
+      this.endShift();
+      return { ok: true, message: 'Shift closed and review generated.' };
+    }
+
+    this.stopServiceTicker();
+
+    const isActiveCaseUnresolved = [GamePhase.SERVING, GamePhase.DOC_REQUEST, GamePhase.BRIBE].includes(this.state);
+    const queueStatus = this.shiftManager.getQueueStatus();
+    const pendingCases = Math.max(0, Number(queueStatus.remaining || 0)) + (isActiveCaseUnresolved ? 1 : 0);
+    const rng = this.getDeterministicRng((this.player.shiftNumber * 1223) + 41);
+    const perf = this.player.performance.currentShift;
+
+    const sentimentPool = ['happy', 'neutral', 'neutral', 'annoyed', 'angry'];
+    const difficultyId = this.getDifficultyProfile().id;
+    const missChance = difficultyId === 'nightmare'
+      ? 0.31
+      : difficultyId === 'hard'
+        ? 0.24
+        : difficultyId === 'medium'
+          ? 0.18
+          : 0.12;
+
+    for (let i = 0; i < pendingCases; i++) {
+      const correct = !rng.chance(missChance);
+      const sentiment = correct
+        ? (rng.chance(0.55) ? 'happy' : 'neutral')
+        : (rng.chance(0.5) ? 'annoyed' : 'angry');
+
+      perf.casesProcessed += 1;
+      perf.processingTimes.push(rng.nextInt(35, 115));
+      perf.customerSentiments.push(sentimentPool.includes(sentiment) ? sentiment : 'neutral');
+
+      if (correct) {
+        perf.correctDecisions += 1;
+        this.player.performance.allTimeStats.totalCorrectDecisions += 1;
+      } else {
+        perf.incorrectDecisions += 1;
+        this.player.performance.allTimeStats.totalIncorrectDecisions += 1;
+        if (rng.chance(0.45)) {
+          perf.policyErrors.minor += 1;
+        }
+      }
+
+      if (!correct && rng.chance(0.35)) {
+        perf.complaints += 1;
+        this.player.performance.allTimeStats.totalComplaints += 1;
+      }
+      if (!correct && rng.chance(0.22)) {
+        perf.escalations += 1;
+        this.player.performance.allTimeStats.totalEscalations += 1;
+      }
+
+      this.player.performance.allTimeStats.totalCasesProcessed += 1;
+    }
+
+    this.shiftManager.currentCustomerIndex = this.shiftManager.customerQueue.length;
+    this.shiftManager.inGameTime = this.shiftManager.shiftEnd;
+    this.shiftManager.isActive = false;
+
+    // Clear active case context when forcing the shift to close.
+    this.currentNPC = null;
+    this.currentCase = null;
+    this.gameState.currentNPC = null;
+    this.gameState.currentCase = null;
+    this.gameState.pendingDocRequest = null;
+    this.gameState.caseWaitRemaining = 0;
+    this.gameState.caseWaitTotal = 0;
+    this.gameState.casePatienceEscalated = false;
+
+    this.logEvent('SHIFT_FAST_FORWARDED', {
+      shiftNumber: this.player.shiftNumber,
+      pendingCasesSimulated: pendingCases
+    });
+
+    this.endShift();
+    return {
+      ok: true,
+      message: `Shift ${this.player.shiftNumber} ended via simulation (${pendingCases} case${pendingCases === 1 ? '' : 's'} fast-forwarded).`,
+      pendingCasesSimulated: pendingCases
+    };
   }
 
   resolveEndOfWeek() {
@@ -1490,6 +2060,9 @@ export class Game {
       summary.outcomes.push('Probation cleared after sustained clean performance.');
     }
 
+    const career = this.getCareerProgressionSnapshot();
+    summary.outcomes.push(`Career status: ${career.departmentLabel} - ${career.rankTitle}.`);
+
     summary.probationStatus.after = Boolean(this.player.onProbation);
     this.gameState.weeklyDirective = { ...summary.nextWeekDirective };
 
@@ -1546,6 +2119,46 @@ export class Game {
       migrated.version = 6;
     }
 
+    if (version < 7) {
+      if (!migrated.player || typeof migrated.player !== 'object') migrated.player = {};
+
+      const legacyDepartment = String(migrated.player.department || 'DMV');
+      const departmentIndex = legacyDepartment === 'BuildingPermits'
+        ? 1
+        : legacyDepartment === 'Impound'
+          ? 2
+          : 0;
+
+      const legacyProgress = Math.max(0, Math.min(100, Number(migrated.player.promotionProgress) || 0));
+      const rankIndex = Math.max(0, Math.min(3, Math.floor(legacyProgress / 25)));
+      const seededState = createInitialProgressionState(Number(migrated?.gameState?.seed || Date.now()));
+
+      migrated.player.progressionState = {
+        ...seededState,
+        departmentIndex,
+        rankIndex,
+        shiftsAtRank: Math.max(0, Math.round(legacyProgress / 25)),
+        successfulShiftsAtRank: 0,
+        cleanConsecutiveAtRank: 0,
+        bribeHandledAtRank: false,
+        lastEvaluation: null
+      };
+
+      migrated.version = 7;
+    }
+
+    if (version < 8) {
+      if (!migrated.gameState) migrated.gameState = {};
+      if (!Array.isArray(migrated.gameState.shiftCaseOutcomes)) migrated.gameState.shiftCaseOutcomes = [];
+      if (!migrated.gameState.activeSilentAudit || typeof migrated.gameState.activeSilentAudit !== 'object') {
+        migrated.gameState.activeSilentAudit = null;
+      }
+      migrated.gameState.shiftStaffingCut = Boolean(migrated.gameState.shiftStaffingCut);
+      migrated.gameState.morale = Math.max(0, Math.min(100, Number(migrated.gameState.morale ?? 100) || 100));
+      migrated.gameState.resignationTriggered = Boolean(migrated.gameState.resignationTriggered);
+      migrated.version = 8;
+    }
+
     return migrated;
   }
 
@@ -1586,6 +2199,7 @@ export class Game {
 
     // Initialize systems
     this.player = new PlayerState();
+    this.initializeProgressionState(this.gameState.seed);
     this.npcGenerator = new NPCGenerator(catalogs, balancing, this.photoLibrary);
     this.caseGenerator = new CaseGenerator(catalogs, balancing, this.photoLibrary);
     this.supervisor = new SupervisorSystem(balancing, dialogue);
@@ -1595,6 +2209,7 @@ export class Game {
     this.ensureLegacySlotMigration();
     this.loadGame();
     this.initializeSettings();
+    this.initializeDifficultyState();
 
     this.state = GamePhase.MENU;
     this.emit('stateChange', { state: this.state });
@@ -1724,23 +2339,41 @@ export class Game {
 
   // Start a new shift
   startShift() {
+    this.initializeDifficultyState();
+    if (this.gameState.resignationTriggered) {
+      this.returnToMenu();
+      return;
+    }
+
     this.stopServiceTicker();
     this.decrementNpcCooldowns();
+    this.initializeProgressionState();
     this.player.startNewShift();
     this.supervisor.initialize(this.player.shiftNumber);
+    const career = this.getCareerProgressionSnapshot();
+    this.gameState.shiftCaseOutcomes = [];
+
+    const nightmareModifiers = this.createNightmareShiftModifiers();
 
     // Generate customer queue
+    const progressionRange = this.getCustomerRangeForProgression();
     const customerCount = this.runRng.nextInt(
-      this.balancing.shift.customersPerShift[0],
-      this.balancing.shift.customersPerShift[1]
+      progressionRange.min,
+      progressionRange.max
     );
     const weeklyCustomerDelta = Math.max(-2, Math.min(2,
       Number(this.gameState?.weeklyDirective?.customerDelta || 0)
     ));
-    const adjustedCustomerCount = Math.max(4, Math.min(12, customerCount + weeklyCustomerDelta));
+    const adjustedCustomerCount = Math.max(
+      progressionRange.min,
+      Math.min(progressionRange.max, customerCount + weeklyCustomerDelta)
+    );
+    const totalCustomerCount = nightmareModifiers.staffingCut
+      ? Math.max(adjustedCustomerCount, adjustedCustomerCount * 2)
+      : adjustedCustomerCount;
 
     const queue = this.npcGenerator.generateShiftQueue(
-      adjustedCustomerCount,
+      totalCustomerCount,
       this.player.department,
       this.npcPool
     );
@@ -1749,21 +2382,26 @@ export class Game {
     this.state = GamePhase.SHIFT_START;
     this.logEvent('SHIFT_STARTED', {
       shiftNumber: this.player.shiftNumber,
-      customerCount: adjustedCustomerCount,
+      customerCount: totalCustomerCount,
       supervisor: this.supervisor.name
     });
     this.emit('stateChange', {
       state: this.state,
       shiftNumber: this.player.shiftNumber,
       department: this.player.department,
-      departmentName: this.catalogs.departments[this.player.department]?.name || this.player.department,
+      departmentName: career.departmentLabel || this.catalogs.departments[this.player.department]?.name || this.player.department,
+      rankTitle: career.rankTitle,
+      careerProgression: career,
+      unlockedDepartments: [...this.player.unlockedDepartments],
       difficulty: this.gameState.difficulty,
       difficultyLabel: this.getDifficultyLabel(),
-      customerCount: adjustedCustomerCount,
+      customerCount: totalCustomerCount,
       supervisorName: this.supervisor.name,
       supervisorType: this.supervisor.type,
       pendingAppeals: this.gameState.pendingAppeals.length,
       weeklyDirective: { ...this.gameState.weeklyDirective },
+      nightmareModifiers,
+      morale: this.getMoraleSnapshot(),
       time: this.shiftManager.getTimeString()
     });
   }
@@ -1784,9 +2422,18 @@ export class Game {
     this.currentNPC = npc;
     this.caseStartTime = Date.now();
 
-    const resumedCase = this.gameState.pendingDocumentReturns[npc.npcId];
-    if (resumedCase) {
-      delete this.gameState.pendingDocumentReturns[npc.npcId];
+    let resumedCase = null;
+    const pendingReturnTicket = npc?.metadata?.pendingReturnTicket;
+    if (pendingReturnTicket && this.gameState.pendingDocumentReturns[pendingReturnTicket]) {
+      resumedCase = this.gameState.pendingDocumentReturns[pendingReturnTicket];
+      delete this.gameState.pendingDocumentReturns[pendingReturnTicket];
+      delete npc.metadata.pendingReturnTicket;
+    } else {
+      // Backward compatibility for older saves that keyed by npcId.
+      resumedCase = this.gameState.pendingDocumentReturns[npc.npcId] || null;
+      if (resumedCase) {
+        delete this.gameState.pendingDocumentReturns[npc.npcId];
+      }
     }
 
     const basePatienceWindow = this.calculateCasePatienceWindow(npc);
@@ -1806,7 +2453,10 @@ export class Game {
       npc,
       this.player.department,
       this.player.shiftNumber,
-      this.getDifficultyProfile()
+      this.getDifficultyProfile(),
+      {
+        allowedRequestTypes: this.getAllowedRequestTypesForDepartment(this.player.department)
+      }
     );
 
     this.applyDatabaseToCaseData(caseData, npc);
@@ -1844,6 +2494,11 @@ export class Game {
       greeting += ` I already filled out the ${this.caseGenerator.formatRequestType(wrongFormCondition.submittedForm)} form, so this should be fine, right?`;
     }
 
+    const difficultyClaim = this.buildDifficultyClaimLine(caseData, rng);
+    if (difficultyClaim) {
+      greeting += ` ${difficultyClaim}`;
+    }
+
     this.state = GamePhase.SERVING;
     this.emit('stateChange', {
       state: this.state,
@@ -1861,6 +2516,8 @@ export class Game {
       waitTotal: this.gameState.caseWaitTotal,
       activeEffects: this.shiftManager.getActiveEffects(),
       activeChaosEvents: this.shiftManager.getActiveChaosEvents(),
+      difficultyBehavior: this.getCurrentDifficultyBehavior(),
+      morale: this.getMoraleSnapshot(),
       archetype: archetype ? { id: archetype.id, name: archetype.name } : null,
       conditions: caseData.caseRecord.inputs.conditions
     });
@@ -1952,6 +2609,7 @@ export class Game {
     };
     this.currentCase.caseRecord.audit.processingTimeSec = processingTime;
     this.currentCase.caseRecord.audit.accuracyScore = evaluation.correct ? 1.0 : 0.0;
+    this.maybeRecordSilentAuditOutcome(this.currentCase.caseRecord, evaluation);
 
     // Update NPC + case outcomes/routing
     this.applyCaseConsequences(
@@ -2017,6 +2675,7 @@ export class Game {
         state: 'bribe',
         npc: this.currentNPC.toJSON(),
         bribeAmount: bribeCondition.bribeAmount,
+        difficultyBehavior: this.getCurrentDifficultyBehavior(),
         dialogue: rng.pick(this.dialogueData.reactions.bribeAttempt)
       });
       return;
@@ -2024,6 +2683,13 @@ export class Game {
 
     const afterScenarioStats = this.captureScenarioStatsSnapshot();
     const scenarioSummary = this.buildScenarioSummary(beforeScenarioStats, afterScenarioStats, playerDecision, correctAction);
+    this.recordShiftCaseOutcome({
+      caseRecord: this.currentCase.caseRecord,
+      npc: this.currentNPC,
+      playerDecision,
+      correctAction,
+      evaluation
+    });
 
     this.state = GamePhase.RESULT;
     this.logEvent('CASE_RESOLVED', {
@@ -2038,6 +2704,7 @@ export class Game {
       evaluation,
       correctAction,
       playerDecision,
+      difficultyBehavior: this.getCurrentDifficultyBehavior(),
       reaction,
       npcName: this.currentNPC.fullName,
       sentiment: evaluation.sentiment,
@@ -2086,6 +2753,17 @@ export class Game {
       accepted,
       caught: bribeResult === 'accepted_caught'
     });
+    this.recordShiftCaseOutcome({
+      caseRecord: this.currentCase?.caseRecord,
+      npc: this.currentNPC,
+      playerDecision: {
+        action: accepted ? 'Approve' : 'Deny',
+        reasonCode: accepted ? 'AcceptedBribe' : 'DeclinedBribe'
+      },
+      correctAction: this.currentCase?.correctAction,
+      evaluation,
+      bribeResult
+    });
     this.emit('stateChange', {
       state: 'result',
       evaluation,
@@ -2094,6 +2772,7 @@ export class Game {
         action: accepted ? 'Approve' : 'Deny',
         reasonCode: accepted ? 'AcceptedBribe' : 'DeclinedBribe'
       },
+      difficultyBehavior: this.getCurrentDifficultyBehavior(),
       reaction: feedback,
       npcName: this.currentNPC.fullName,
       sentiment: evaluation.sentiment,
@@ -2129,12 +2808,23 @@ export class Game {
   endShift() {
     this.stopServiceTicker();
     const shiftResult = this.player.endShift(this.balancing);
-    this.updateDepartmentUnlocks();
+    const progressionResult = this.resolveCareerProgressionAfterShift(shiftResult);
+    const departmentProgress = this.updateDepartmentUnlocks();
     const review = this.supervisor.generateShiftReview(this.player);
     const shiftSummary = this.shiftManager.getShiftSummary();
     const newAchievements = this.player.checkAchievements();
     const complianceReport = this.runAuditAndAppeals();
+    const morale = this.updateMoraleAfterShift(shiftResult, complianceReport);
     const weeklySummary = this.resolveEndOfWeek();
+    const feedbackMode = this.getCurrentDifficultyBehavior().shiftFeedbackMode;
+    const mistakes = (this.gameState.shiftCaseOutcomes || []).filter((entry) => !entry.correct);
+
+    if (this.gameState.activeSilentAudit?.watchedCases) {
+      complianceReport.silentAudit = {
+        watchedCases: Number(this.gameState.activeSilentAudit.watchedCases || 0),
+        watchedViolations: Number(this.gameState.activeSilentAudit.watchedViolations || 0)
+      };
+    }
 
     this.state = GamePhase.REVIEW;
     this.logEvent('SHIFT_COMPLETED', {
@@ -2147,9 +2837,33 @@ export class Game {
       shiftResult,
       review,
       shiftSummary,
+      feedbackMode,
+      mistakeFeedback: feedbackMode === 'detailed'
+        ? mistakes.map((entry) => ({ ...entry }))
+        : feedbackMode === 'summary'
+          ? mistakes.map((entry) => ({
+            caseId: entry.caseId,
+            npcName: entry.npcName,
+            selectedAction: entry.selectedAction,
+            selectedReason: entry.selectedReason,
+            expectedAction: entry.expectedAction,
+            expectedReason: entry.expectedReason
+          }))
+          : [],
       newAchievements,
       complianceReport,
+      morale,
+      resignation: {
+        triggered: Boolean(morale?.triggered),
+        message: morale?.triggered
+          ? 'You submit a voluntary resignation before the next shift begins.'
+          : ''
+      },
       weeklySummary,
+      departmentPromotion: departmentProgress?.promotedTo || null,
+      careerPromotion: progressionResult?.promotion || null,
+      progressionMetrics: progressionResult?.metrics || null,
+      careerProgression: progressionResult?.after || this.getCareerProgressionSnapshot(),
       playerStats: {
         money: this.player.money,
         shiftsCompleted: this.player.shiftsCompleted,
@@ -2157,6 +2871,10 @@ export class Game {
         writeUps: this.player.writeUps,
         streak: this.player.cleanShiftStreak,
         promotionProgress: this.player.promotionProgress,
+        rankTitle: progressionResult?.after?.rankTitle || this.getCareerProgressionSnapshot().rankTitle,
+        rankIndex: progressionResult?.after?.rankIndex || this.getCareerProgressionSnapshot().rankIndex,
+        rankCount: progressionResult?.after?.rankCount || this.getCareerProgressionSnapshot().rankCount,
+        departmentLabel: progressionResult?.after?.departmentLabel || this.getCareerProgressionSnapshot().departmentLabel,
         supervisorRelationship: this.player.supervisorRelationship,
         onProbation: this.player.onProbation,
         unlockedDepartments: [...this.player.unlockedDepartments]
@@ -2187,6 +2905,11 @@ export class Game {
         pendingDocRequest: this.gameState.pendingDocRequest,
         agencyDatabase: this.gameState.agencyDatabase,
         weeklyDirective: this.gameState.weeklyDirective,
+        shiftCaseOutcomes: this.gameState.shiftCaseOutcomes,
+        activeSilentAudit: this.gameState.activeSilentAudit,
+        shiftStaffingCut: this.gameState.shiftStaffingCut,
+        morale: this.gameState.morale,
+        resignationTriggered: this.gameState.resignationTriggered,
         settings: this.gameState.settings,
         lastPlayedAt: this.gameState.lastPlayedAt,
         slotIndex: slotIndex || null
@@ -2224,7 +2947,19 @@ export class Game {
     if (!save) return false;
 
     this.player = PlayerState.fromJSON(save.player);
-    this.updateDepartmentUnlocks();
+    if (this.player.department === 'Parking') this.player.department = 'DMV';
+    if (this.player.department === 'Permits') this.player.department = 'BuildingPermits';
+
+    if (Array.isArray(this.player.unlockedDepartments)) {
+      this.player.unlockedDepartments = this.player.unlockedDepartments.map((departmentId) => {
+        if (departmentId === 'Parking') return 'DMV';
+        if (departmentId === 'Permits') return 'BuildingPermits';
+        return departmentId;
+      });
+    }
+
+    this.player.progressionState = normalizeProgressionState(this.player.progressionState, this.gameState.seed);
+    this.updateDepartmentUnlocks({ allowAutoPromotion: false });
     this.npcGenerator.setGlobalSeed(save.globalSeed || Date.now());
 
     if (save.gameState?.seed) {
@@ -2241,10 +2976,17 @@ export class Game {
       this.gameState.pendingDocRequest = save.gameState.pendingDocRequest || null;
       this.gameState.agencyDatabase = save.gameState.agencyDatabase || { peopleByNpcId: {}, vehiclesByVin: {} };
       this.gameState.weeklyDirective = save.gameState.weeklyDirective || this.getDefaultWeeklyDirective();
+      this.gameState.shiftCaseOutcomes = save.gameState.shiftCaseOutcomes || [];
+      this.gameState.activeSilentAudit = save.gameState.activeSilentAudit || null;
+      this.gameState.shiftStaffingCut = Boolean(save.gameState.shiftStaffingCut);
+      this.gameState.morale = Number.isFinite(Number(save.gameState.morale)) ? Number(save.gameState.morale) : 100;
+      this.gameState.resignationTriggered = Boolean(save.gameState.resignationTriggered);
       this.gameState.settings = save.gameState.settings || this.getDefaultSettings();
       this.gameState.lastPlayedAt = save.gameState.lastPlayedAt || null;
     }
 
+    this.initializeProgressionState(this.gameState.seed);
+    this.initializeDifficultyState();
     this.initializeWeeklyDirective();
     this.initializeSettings();
 
@@ -2342,7 +3084,14 @@ export class Game {
     this.gameState.pendingDocRequest = null;
     this.gameState.agencyDatabase = { peopleByNpcId: {}, vehiclesByVin: {} };
     this.gameState.weeklyDirective = this.getDefaultWeeklyDirective();
+    this.gameState.shiftCaseOutcomes = [];
+    this.gameState.activeSilentAudit = null;
+    this.gameState.shiftStaffingCut = false;
+    this.gameState.morale = 100;
+    this.gameState.resignationTriggered = false;
     this.gameState.settings = this.getDefaultSettings();
+    this.player.progressionState = createInitialProgressionState(this.gameState.seed);
+    this.syncPlayerCareerFromProgression();
     this.initializeSettings();
   }
 
@@ -2367,10 +3116,13 @@ export class Game {
   }
 
   getGameState() {
+    const career = this.getCareerProgressionSnapshot();
     return {
       state: this.state,
       seed: this.gameState.seed,
       difficulty: this.gameState.difficulty,
+      morale: this.getMoraleSnapshot(),
+      resignationTriggered: Boolean(this.gameState.resignationTriggered),
       developmentMode: this.gameState.developmentMode,
       manualOpen: this.gameState.manualOpen,
       settings: this.getSettings(),
@@ -2378,7 +3130,8 @@ export class Game {
       eventLog: this.gameState.eventLog,
       player: this.player,
       shiftNumber: this.player.shiftNumber,
-      department: this.player.department
+      department: this.player.department,
+      careerProgression: career
     };
   }
 }

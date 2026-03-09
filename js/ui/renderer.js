@@ -16,7 +16,11 @@ const SCENARIO_FORM_DEFINITIONS = {
   PermitRenewal: { formNumber: 'PK-301', title: 'Parking Permit Renewal Form' },
   VehicleRelease: { formNumber: 'IMP-501', title: 'Impounded Vehicle Release Request' },
   PropertyClaim: { formNumber: 'IMP-320', title: 'Impound Property Claim Form' },
-  AuctionInquiry: { formNumber: 'IMP-110', title: 'Impound Auction Information Request' }
+  AuctionInquiry: { formNumber: 'IMP-110', title: 'Impound Auction Information Request' },
+  BuildingPermit: { formNumber: 'PMT-410', title: 'Building Permit Application' },
+  BusinessLicense: { formNumber: 'PMT-220', title: 'Business License Application' },
+  NoiseVariance: { formNumber: 'PMT-330', title: 'Noise Variance Request' },
+  CodeComplianceInspection: { formNumber: 'PMT-140', title: 'Code Compliance Inspection Request' }
 };
 
 export class UIRenderer {
@@ -32,6 +36,7 @@ export class UIRenderer {
     this.pendingDeleteSlot = null;
     this.selectedNewCareerSlot = null;
     this.lastResultData = null;
+    this.lastReviewData = null;
   }
 
   init() {
@@ -299,8 +304,11 @@ export class UIRenderer {
       }
     });
     this.elements.continueBtn?.addEventListener('click', () => {
-      this.game.state = 'menu';
-      this.handleStateChange({ state: 'menu' });
+      if (this.lastReviewData?.resignation?.triggered) {
+        this.game.returnToMenu?.();
+        return;
+      }
+      this.game.startShift();
     });
 
     this.elements.closeHandbookBtn?.addEventListener('click', () => this.closeHandbook());
@@ -520,10 +528,7 @@ export class UIRenderer {
       'NameChange',
       'VehicleRegistration',
       'TitleTransfer',
-      'PlateRenewal'
-    ];
-
-    const parkingOrder = [
+      'PlateRenewal',
       'TicketPayment',
       'TicketAppeal',
       'PermitApplication',
@@ -536,10 +541,17 @@ export class UIRenderer {
       'AuctionInquiry'
     ];
 
+    const permitsOrder = [
+      'BuildingPermit',
+      'BusinessLicense',
+      'NoiseVariance',
+      'CodeComplianceInspection'
+    ];
+
     const orderByDept = {
       DMV: dmvOrder,
-      Parking: parkingOrder,
-      Impound: impoundOrder
+      Impound: impoundOrder,
+      BuildingPermits: permitsOrder
     };
 
     const preferredOrder = orderByDept[dept] || [];
@@ -559,7 +571,14 @@ export class UIRenderer {
     const deptConfig = this.game.catalogs.departments[dept];
     const requestTypeLabel = this.game.caseGenerator.formatRequestType(caseRecord.requestType);
     const issueDate = this.getCurrentDateLabel();
-    const requestEntries = this.orderRequestEntries(dept, Object.entries(deptConfig.requiredDocsByRequest));
+    const allowedRequests = new Set(
+      this.game.getAllowedRequestTypesForDepartment?.(dept)
+      || Object.keys(deptConfig.requiredDocsByRequest)
+    );
+    const requestEntries = this.orderRequestEntries(
+      dept,
+      Object.entries(deptConfig.requiredDocsByRequest).filter(([requestType]) => allowedRequests.has(requestType))
+    );
     const pages = [
       {
         title: 'General Policy',
@@ -954,9 +973,10 @@ export class UIRenderer {
               <label class="menu-select menu-field-block menu-slot-field-compact">
                 <span>Difficulty</span>
                 <select id="new-career-difficulty">
-                  <option value="trainee">Trainee</option>
-                  <option value="clerk" selected>Clerk</option>
-                  <option value="senior">Senior Clerk</option>
+                  <option value="easy">Small Town Government</option>
+                  <option value="medium" selected>County Seat</option>
+                  <option value="hard">State Capital</option>
+                  <option value="nightmare">DOGE Is Watching</option>
                 </select>
               </label>
             </div>
@@ -1103,18 +1123,20 @@ export class UIRenderer {
 
   getCareerDifficultyLabel(difficultyId) {
     const map = {
-      easy: 'Trainee',
-      medium: 'Clerk',
-      hard: 'Senior Clerk'
+      easy: 'Small Town Government',
+      medium: 'County Seat',
+      hard: 'State Capital',
+      nightmare: 'DOGE Is Watching'
     };
-    return map[difficultyId] || 'Clerk';
+    return map[difficultyId] || 'County Seat';
   }
 
   mapCareerDifficultyToGame(difficultyId) {
     const map = {
-      trainee: 'easy',
-      clerk: 'medium',
-      senior: 'hard'
+      easy: 'easy',
+      medium: 'medium',
+      hard: 'hard',
+      nightmare: 'nightmare'
     };
     return map[difficultyId] || 'medium';
   }
@@ -1207,7 +1229,7 @@ export class UIRenderer {
       const difficultyInput = this.elements.menuPanel?.querySelector('#new-career-difficulty');
       const selectedSlot = Number(slot || 1);
       const careerName = String(nameInput?.value || 'New Clerk').trim() || 'New Clerk';
-      const difficulty = this.mapCareerDifficultyToGame(difficultyInput?.value || 'clerk');
+      const difficulty = this.mapCareerDifficultyToGame(difficultyInput?.value || 'medium');
 
       const ok = this.game.startNewCareer?.({
         slotIndex: selectedSlot,
@@ -1258,16 +1280,40 @@ export class UIRenderer {
 
   showShiftStart(data) {
     this.elements.shiftStartScreen.classList.remove('hidden');
+    const unlockedDepartments = Array.isArray(data.unlockedDepartments)
+      ? data.unlockedDepartments
+      : [this.game.player.department];
+    const showDepartmentSelector = this.game.developmentMode && unlockedDepartments.length > 1;
+    const nightmareMemo = data?.nightmareModifiers?.memo ? `<p><strong>Memo:</strong> ${data.nightmareModifiers.memo}</p>` : '';
+    const moraleLine = data?.morale
+      ? `<p><strong>Morale:</strong> ${data.morale.value}% (${data.morale.band})</p><p class="menu-note">${data.morale.commentary}</p>`
+      : '';
+    const departmentOptions = unlockedDepartments
+      .map((deptId) => {
+        const deptName = this.game.catalogs?.departments?.[deptId]?.name || deptId;
+        const isSelected = deptId === this.game.player.department ? ' selected' : '';
+        return `<option value="${deptId}"${isSelected}>${deptName}</option>`;
+      })
+      .join('');
+
     this.elements.shiftStartContent.innerHTML = `
       <div class="shift-briefing">
         <h2>Shift #${data.shiftNumber}</h2>
         <div class="briefing-details">
           <p><strong>Department:</strong> ${data.departmentName || data.department || 'Department of Motor Vehicles'}</p>
+          <p><strong>Rank:</strong> ${data.rankTitle || data.careerProgression?.rankTitle || 'Clerk'}</p>
+          ${showDepartmentSelector
+            ? `<label class="shift-department-selector"><strong>Dev Department Select:</strong>
+                <select id="shift-department-select">${departmentOptions}</select>
+              </label>`
+            : ''}
           <p><strong>Difficulty:</strong> ${data.difficultyLabel || this.game.getDifficultyLabel()}</p>
           <p><strong>Time:</strong> ${data.time}</p>
           <p><strong>Customers in Queue:</strong> ${data.customerCount}</p>
           <p><strong>Supervisor:</strong> ${data.supervisorName}</p>
           <p><strong>Pending Appeals:</strong> ${data.pendingAppeals ?? 0}</p>
+          ${nightmareMemo}
+          ${moraleLine}
           <p class="supervisor-type">${this.getSupervisorDescription(data.supervisorType)}</p>
         </div>
         <div class="shift-tips">
@@ -1281,6 +1327,28 @@ export class UIRenderer {
         </div>
       </div>
     `;
+
+    const departmentSelect = this.elements.shiftStartContent.querySelector('#shift-department-select');
+    if (departmentSelect) {
+      departmentSelect.addEventListener('change', (event) => {
+        const selectedDept = event.target?.value;
+        if (!selectedDept) return;
+        const switched = this.game.setDepartment(selectedDept);
+        if (!switched) {
+          this.showNotification('Unable to switch department.', 'error');
+          return;
+        }
+
+        const selectedName = this.game.catalogs?.departments?.[selectedDept]?.name || selectedDept;
+        this.showNotification(`Department switched to ${selectedName}.`, 'success');
+        this.showShiftStart({
+          ...data,
+          department: selectedDept,
+          departmentName: selectedName,
+          unlockedDepartments: [...unlockedDepartments]
+        });
+      });
+    }
   }
 
   getSupervisorDescription(type) {
@@ -1435,6 +1503,13 @@ export class UIRenderer {
         `I'm here for ${this.game.caseGenerator.formatRequestType(data.caseRecord?.requestType || 'service')}.`;
       this.elements.deskCustomerChat.innerHTML = `<p>"${acrossDeskLine}"</p>`;
     }
+
+    if (this.elements.customerInfo) {
+      const morale = data?.morale;
+      this.elements.customerInfo.textContent = morale?.commentary
+        ? `Inner Voice: ${morale.commentary}`
+        : '';
+    }
   }
 
   updateHUD(queueStatus) {
@@ -1451,9 +1526,10 @@ export class UIRenderer {
       this.elements.moneyDisplay.textContent = `$${this.game.player.money}`;
     }
     if (this.elements.performanceDisplay) {
+      const career = this.game.getCareerProgressionSnapshot?.() || null;
       this.elements.performanceDisplay.innerHTML = `
         <span class="label">${this.game.player.department}</span>
-        <span class="value">Clerk</span>
+        <span class="value">${career?.rankTitle || 'Clerk'}</span>
       `;
     }
   }
@@ -1551,6 +1627,7 @@ export class UIRenderer {
     return {
       caseRecord: overrides.caseRecord || this.game.currentCase?.caseRecord || null,
       npc: this.game.currentNPC || null,
+      devMode: Boolean(this.game.developmentMode),
       npcRegistry: this.buildDeskTerminalNpcRegistry(),
       activeChaosEvents: overrides.activeChaosEvents || this.game.shiftManager?.getActiveChaosEvents?.() || [],
       agencyDatabase: this.game.getAgencyDatabaseSnapshot?.() || { people: [], vehicles: [] },
@@ -1674,12 +1751,49 @@ export class UIRenderer {
     const dept = this.game.player.department;
     const deptConfig = this.game.catalogs?.departments?.[dept];
     if (!deptConfig?.requiredDocsByRequest) return [];
+    const allowedRequests = new Set(
+      this.game.getAllowedRequestTypesForDepartment?.(dept)
+      || Object.keys(deptConfig.requiredDocsByRequest)
+    );
 
     const uniqueDocTypes = new Set();
-    Object.values(deptConfig.requiredDocsByRequest).forEach((docs) => {
+    Object.entries(deptConfig.requiredDocsByRequest).forEach(([requestType, docs]) => {
+      if (!allowedRequests.has(requestType)) return;
       (docs || []).forEach((docType) => uniqueDocTypes.add(docType));
     });
     return Array.from(uniqueDocTypes);
+  }
+
+  getChecklistCategoryLabel(docType) {
+    const categoryMap = {
+      driversLicense: 'Proof of Identity',
+      birthCertificate: 'Proof of Identity',
+      socialSecurityCard: 'Identity Number Verification',
+      proofOfResidence: 'Proof of Residence',
+      insuranceProof: 'Insurance Verification',
+      titleDocument: 'Ownership Record',
+      registrationCard: 'Vehicle Registration Record',
+      vehicleRegistration: 'Vehicle Registration Record',
+      billOfSale: 'Ownership Transfer Record',
+      odometerDisclosure: 'Vehicle Mileage Disclosure',
+      courtOrder: 'Legal Order Documentation',
+      parentalConsent: 'Guardian Authorization',
+      ticketCitation: 'Citation Record',
+      evidencePhotos: 'Supporting Evidence',
+      parkingPermit: 'Permit Record',
+      releaseForm: 'Release Authorization',
+      policeReport: 'Incident Report',
+      proofOfOwnership: 'Ownership Record',
+      sitePlan: 'Property/Project Plan',
+      zoningClearance: 'Zoning Clearance',
+      businessRegistration: 'Business Registration',
+      taxClearance: 'Tax Compliance',
+      eventPlan: 'Event Plan Documentation',
+      neighborhoodConsent: 'Community Consent',
+      propertyDeed: 'Property Record',
+      inspectionChecklist: 'Inspection Checklist'
+    };
+    return categoryMap[docType] || 'Supporting Documentation';
   }
 
   renderFormRequestTray(caseRecord, documents = {}) {
@@ -1803,14 +1917,25 @@ export class UIRenderer {
   }
 
   handleDeskTerminalCommand(commandPayload = {}) {
-    if (!this.game.developmentMode) {
-      return { ok: false, message: 'Developer mode is required.' };
-    }
-
     const { command, target, id, payload } = commandPayload;
     const normalizedCommand = String(command || '').toLowerCase();
     const normalizedTarget = String(target || '').toLowerCase();
     const requestedId = String(id || '').trim();
+
+    if (normalizedCommand === 'toggle_dev_mode') {
+      const enabled = !this.game.developmentMode;
+      this.setDevControlsVisibility(enabled, { persist: true, notify: true });
+      this.refreshDeskTerminalContext();
+      return {
+        ok: true,
+        message: `Developer mode ${enabled ? 'enabled' : 'disabled'}.`,
+        enabled
+      };
+    }
+
+    if (!this.game.developmentMode) {
+      return { ok: false, message: 'Developer mode is required.' };
+    }
 
     if (normalizedCommand === 'database_update' && normalizedTarget === 'person' && requestedId) {
       const response = this.game.updateAgencyPersonRecord(requestedId, payload || {});
@@ -1828,6 +1953,43 @@ export class UIRenderer {
       return {
         ...response,
         database
+      };
+    }
+
+    if (normalizedCommand === 'skip_week') {
+      const response = this.game.skipToNextWeekSimulated?.() || { ok: false, message: 'Skip-week command is unavailable.' };
+      if (response.ok) {
+        this.closeDeskTerminal();
+      }
+
+      const outputLines = [];
+      if (response.message) outputLines.push(response.message);
+      if (response.ok) {
+        const weekly = response.weeklySummary || null;
+        if (weekly) {
+          outputLines.push(`Weekly summary: ${weekly.weeklyPerf}% (${weekly.tier})`);
+          (weekly.outcomes || []).slice(0, 3).forEach((line) => outputLines.push(`- ${line}`));
+        }
+      }
+
+      this.refreshDeskTerminalContext();
+      return {
+        ok: Boolean(response.ok),
+        message: response.message || (response.ok ? 'Week skipped.' : 'Skip failed.'),
+        outputLines
+      };
+    }
+
+    if (normalizedCommand === 'end_shift') {
+      const response = this.game.skipToShiftEndSimulated?.() || { ok: false, message: 'Shift-end command is unavailable.' };
+      if (response.ok) {
+        this.closeDeskTerminal();
+      }
+      this.refreshDeskTerminalContext();
+      return {
+        ok: Boolean(response.ok),
+        message: response.message || (response.ok ? 'Shift ended.' : 'Unable to end shift.'),
+        outputLines: [response.message || (response.ok ? 'Shift ended.' : 'Unable to end shift.')]
       };
     }
 
@@ -2112,11 +2274,14 @@ export class UIRenderer {
     const addressDoc = firstPresent('proofOfResidence');
     const courtOrderDoc = firstPresent('courtOrder');
     const formDef = this.getScenarioFormDefinition(caseRecord.requestType);
+    const difficultyProfile = this.game.getDifficultyProfile();
+    const checklistMode = difficultyProfile.checklistMode || 'none';
     const requiredProof = requiredDocTypes.map((docType) => ({
-      label: this.game.caseGenerator.formatDocName(docType),
+      label: checklistMode === 'category'
+        ? this.getChecklistCategoryLabel(docType)
+        : this.game.caseGenerator.formatDocName(docType),
       checked: Boolean(providedDocs?.[docType]?.present)
     }));
-    const difficultyProfile = this.game.getDifficultyProfile();
     const difficultyId = difficultyProfile.id;
     const blankFieldValue = '________________';
     const vehicleRequestTypes = new Set(['VehicleRegistration', 'PlateRenewal', 'TitleTransfer', 'PermitApplication', 'PermitRenewal', 'VehicleRelease']);
@@ -2159,7 +2324,7 @@ export class UIRenderer {
       submittedAt: this.getCurrentInGameDateIso(),
       requiredProof,
       includeVehicleSection: vehicleRequestTypes.has(caseRecord.requestType),
-      includeSupportingChecklist: Boolean(difficultyProfile.includeSupportingChecklist),
+      includeSupportingChecklist: checklistMode !== 'none',
       devMode: this.game.developmentMode,
       devFocusFields: [
         'applicant_name',
@@ -2360,12 +2525,15 @@ export class UIRenderer {
     }
 
     const docName = this.game.caseGenerator.formatDocName(docType);
-    const showHints = this.game.developmentMode;
+    const behavior = this.game.getCurrentDifficultyBehavior?.() || {};
+    const easySubtleHints = behavior.forgedHintMode === 'subtle';
+    const showHints = this.game.developmentMode || easySubtleHints;
     let statusClass = showHints ? 'valid' : 'received';
     let statusText = showHints ? 'VALID' : 'ON FILE';
-    if (showHints && doc.forged) {
+    const hasInconsistency = Array.isArray(doc.errors) && doc.errors.includes('address_inconsistency');
+    if (showHints && (doc.forged || hasInconsistency)) {
       statusClass = 'forged';
-      statusText = 'SUSPICIOUS';
+      statusText = this.game.developmentMode ? 'SUSPICIOUS' : 'FLAGGED';
     } else if (showHints && doc.expired) {
       statusClass = 'expired';
       statusText = 'EXPIRED';
@@ -2719,6 +2887,9 @@ export class UIRenderer {
 
   showResult(data) {
     this.lastResultData = data;
+    const behavior = data?.difficultyBehavior || this.game.getCurrentDifficultyBehavior?.() || {};
+    const revealExplanations = this.game.developmentMode || behavior.shiftFeedbackMode === 'detailed';
+    const revealExpectedDecision = this.game.developmentMode || behavior.shiftFeedbackMode !== 'score_only';
 
     this.elements.gameScreen.classList.remove('hidden');
     this.elements.resultOverlay.classList.remove('hidden');
@@ -2750,11 +2921,11 @@ export class UIRenderer {
       `
       : '';
 
-    const correctActionHTML = data.correctAction
+    const correctActionHTML = data.correctAction && revealExpectedDecision
       ? `
         <div class="correct-action ${resultClass}">
           <strong>Correct action was:</strong> ${expectedDecisionLabel}
-          <p>${data.correctAction.explanation}</p>
+          ${revealExplanations ? `<p>${data.correctAction.explanation}</p>` : ''}
           ${devDecisionCompare}
         </div>
       `
@@ -2804,73 +2975,48 @@ export class UIRenderer {
   }
 
   showBribe(data) {
+    const tone = data?.difficultyBehavior?.bribeTone || this.game.getCurrentDifficultyBehavior?.().bribeTone || 'natural';
+    const title = tone === 'obvious'
+      ? 'Bribe Attempt!'
+      : tone === 'disguised'
+        ? 'Suspicious "Gift" Offer'
+        : 'Improper Offer';
+    const warningText = tone === 'obvious'
+      ? 'This is a direct bribe attempt. Accepting can trigger immediate disciplinary action.'
+      : tone === 'disguised'
+        ? 'This may be framed as a harmless favor. Accepting still counts as bribery if discovered.'
+        : 'Accepting money or favors to alter a decision is a serious conduct violation.';
+
     this.elements.gameScreen.classList.remove('hidden');
     this.elements.bribeOverlay.classList.remove('hidden');
     this.elements.bribeContent.innerHTML = `
       <div class="bribe-card">
         <div class="bribe-icon">&#128176;</div>
-        <h3>Bribe Attempt!</h3>
+        <h3>${title}</h3>
         <p class="bribe-dialogue">"${data.dialogue}"</p>
         <p class="bribe-amount">Offer: <strong>$${data.bribeAmount}</strong></p>
-        <p class="bribe-warning">Accepting bribes is a serious offense. If caught, you will receive a write-up.</p>
+        <p class="bribe-warning">${warningText}</p>
       </div>
     `;
   }
 
   showReview(data) {
+    this.lastReviewData = data;
     this.elements.reviewScreen.classList.remove('hidden');
     const review = data.review;
     const summary = data.shiftSummary;
     const stats = data.playerStats;
     const weekly = data.weeklySummary || null;
-
-    let achievementsHTML = '';
-    if (data.newAchievements.length > 0) {
-      achievementsHTML = `
-        <div class="achievements-section">
-          <h3>New Achievements!</h3>
-          ${data.newAchievements.map(a => `
-            <div class="achievement-item">
-              <span class="achievement-icon">&#127942;</span>
-              <span class="achievement-name">${a.name}</span>
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
-
-    let eventsHTML = '';
-    if (summary.events.length > 0) {
-      eventsHTML = `
-        <div class="events-section">
-          <h3>Shift Events</h3>
-          ${summary.events.map(e => `
-            <div class="event-item">
-              <span class="event-time">${e.time}</span>
-              <span class="event-name">${e.name}</span>
-              <p>${e.description}</p>
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
+    const feedbackMode = data.feedbackMode || 'summary';
+    const mistakeFeedback = Array.isArray(data.mistakeFeedback) ? data.mistakeFeedback : [];
+    const resignation = data.resignation || { triggered: false, message: '' };
+    const morale = data.morale || null;
+    const departmentPromotion = data.departmentPromotion || null;
+    const careerProgression = data.careerProgression || this.game.getCareerProgressionSnapshot?.() || null;
+    const careerPromotion = data.careerPromotion || null;
+    const progressionMetrics = data.progressionMetrics || null;
 
     const compliance = data.complianceReport || null;
-    let complianceHTML = '';
-    if (compliance) {
-      complianceHTML = `
-        <div class="review-details">
-          <h3>Audit & Appeals</h3>
-          <div class="detail-grid">
-            <div class="detail-item">Audited Cases: ${compliance.audited}</div>
-            <div class="detail-item">Violations: ${compliance.violations}</div>
-            <div class="detail-item">Cleared: ${compliance.cleared}</div>
-            <div class="detail-item">New Appeals: ${compliance.newAppeals}</div>
-            <div class="detail-item">Pending Appeals: ${compliance.pendingAppeals}</div>
-          </div>
-        </div>
-      `;
-    }
 
     const gradeColors = { S: '#FFD700', A: '#4CAF50', B: '#2196F3', C: '#FF9800', D: '#f44336', F: '#9C27B0' };
     const weeklyTierLabel = {
@@ -2881,96 +3027,267 @@ export class UIRenderer {
       standard: 'Standard Week'
     };
 
-    let weeklyHTML = '';
-    if (weekly) {
-      const adjustmentRows = [
-        { label: 'Money', value: weekly.adjustments?.money || 0, format: (v) => `${v > 0 ? '+' : ''}$${v}` },
-        { label: 'Promotion Progress', value: weekly.adjustments?.promotionProgress || 0, format: (v) => `${v > 0 ? '+' : ''}${v}` },
-        { label: 'Supervisor Relationship', value: weekly.adjustments?.supervisorRelationship || 0, format: (v) => `${v > 0 ? '+' : ''}${v}` },
-        { label: 'Write-ups', value: weekly.adjustments?.writeUps || 0, format: (v) => `${v > 0 ? '+' : ''}${v}` },
-        { label: 'Audit Risk', value: weekly.adjustments?.auditRisk || 0, format: (v) => `${v > 0 ? '+' : ''}${v}` }
-      ];
+    const isWeeklyReview = Boolean(weekly);
 
-      weeklyHTML = `
-        <div class="review-details">
-          <h3>End of Week #${weekly.weekNumber}</h3>
-          <div class="detail-grid">
-            <div class="detail-item">Weekly Performance: ${weekly.weeklyPerf}%</div>
-            <div class="detail-item">Tier: ${weeklyTierLabel[weekly.tier] || weekly.tier}</div>
-            <div class="detail-item">Probation: ${weekly.probationStatus?.after ? 'Active' : 'No'}</div>
-            <div class="detail-item">Next Week Directive: ${weekly.nextWeekDirective?.memo || 'Standard operations.'}</div>
-          </div>
-          <div class="detail-grid">
-            ${adjustmentRows.map((item) => `<div class="detail-item">${item.label}: ${item.format(item.value)}</div>`).join('')}
-          </div>
-          <div class="consequences-section">
-            ${(weekly.outcomes || []).map((outcome) => `<p class="consequence">${outcome}</p>`).join('')}
-          </div>
+    if (feedbackMode === 'score_only') {
+      if (this.elements.continueBtn) {
+        this.elements.continueBtn.textContent = resignation.triggered ? '[ RETURN TO TITLE ]' : '[ CONTINUE ]';
+      }
+      this.elements.reviewScreen.classList.remove('dev-review-screen');
+      this.elements.reviewContent.innerHTML = `
+        <div class="review-card review-card-narrative review-report">
+          <h2>SHIFT #${summary.shiftNumber} COMPLETE</h2>
+          <p class="review-report-separator">--------------------------------</p>
+          <p class="review-headline" style="color:${gradeColors[review.grade] || '#fff'}">Performance Score: ${review.score} / 100</p>
+          ${morale ? `<p class="review-report-line">Morale: ${morale.value}% (${morale.band})</p>` : ''}
+          ${morale?.commentary ? `<p class="review-report-quote">"${morale.commentary}"</p>` : ''}
+          ${resignation.triggered ? `<p class="review-report-line">${resignation.message}</p>` : ''}
         </div>
       `;
+      return;
     }
 
-    this.elements.reviewContent.innerHTML = `
-      <div class="review-card">
-        <h2>End of Shift #${summary.shiftNumber}</h2>
+    const departmentLabel = this.game.catalogs?.departments?.[this.game.player.department]?.name || 'Department of Citizen Processing';
+    const violations = compliance?.violations ?? 0;
+    const warningsIssued = Math.max(0, Number(this.game.player?.performance?.currentShift?.policyErrors?.minor ?? 0));
+    const appealsTriggered = compliance?.newAppeals ?? 0;
+    const earnedAchievements = Array.isArray(data.newAchievements) ? data.newAchievements : [];
+    const isDevMode = Boolean(this.game.developmentMode);
+    const shiftPerf = this.game.player?.performance?.currentShift || {};
+    const cleanBreakReasons = [];
+    if (Number(shiftPerf?.policyErrors?.major || 0) > 0 || Number(shiftPerf?.policyErrors?.minor || 0) > 0) {
+      cleanBreakReasons.push('policy errors');
+    }
+    if (Number(shiftPerf?.complaints || 0) > 0) {
+      cleanBreakReasons.push('customer complaints');
+    }
+    if (Number(shiftPerf?.bribesAccepted || 0) > 0) {
+      cleanBreakReasons.push('accepted bribe');
+    }
 
-        <div class="score-display">
-          <div class="score-grade" style="color:${gradeColors[review.grade] || '#fff'}">${review.grade}</div>
-          <div class="score-number">${review.score}/100</div>
-        </div>
+    const performanceNotes = [];
+    if (summary.customersServed >= summary.totalCustomers) {
+      performanceNotes.push('Perfect Completion Rate');
+    }
+    if (careerProgression) {
+      performanceNotes.push(`Clean Shift Streak: ${Number(careerProgression.cleanConsecutiveAtRank || 0)}`);
+    }
+    if (data.shiftResult.isClean) {
+      // The streak value is already shown above.
+    }
+    if (departmentPromotion && isDevMode) {
+      performanceNotes.push(`Promotion Active: ${this.game.catalogs?.departments?.[departmentPromotion]?.name || departmentPromotion}`);
+    }
+    if (careerPromotion?.promotedWithinDepartment) {
+      performanceNotes.push(`Rank Promotion: ${careerPromotion.fromRankTitle} -> ${careerPromotion.toRankTitle}`);
+    }
+    if (careerPromotion?.transferredDepartment) {
+      performanceNotes.push(`Transfer Memo: ${careerPromotion.toDepartmentLabel} assignment begins next shift.`);
+    }
+    if (progressionMetrics && Number.isFinite(progressionMetrics.weightedScore)) {
+      performanceNotes.push(`Promotion Evaluation Score: ${progressionMetrics.weightedScore}`);
+    }
+    if (careerProgression) {
+      const successDone = Number(careerProgression.successfulShiftsAtRank || 0);
+      const successNeeded = Number(careerProgression.requiredSuccessfulShifts || 0);
+      if (isDevMode && successNeeded > 0 && successDone < successNeeded) {
+        performanceNotes.push(`Promotion Blocker: Successful shifts ${successDone}/${successNeeded}`);
+      }
 
-        <div class="supervisor-comment">
-          <div class="supervisor-avatar">&#128100;</div>
-          <div class="comment-bubble">
-            <p class="commenter">${review.supervisorName}:</p>
-            <p>"${review.comment}"</p>
-          </div>
-        </div>
+      const cleanDone = Number(careerProgression.cleanConsecutiveAtRank || 0);
+      const cleanNeeded = Number(careerProgression.requiredCleanConsecutive || 0);
+      if (!isDevMode && cleanDone === 0 && cleanNeeded > 0 && cleanBreakReasons.length) {
+        performanceNotes.push(`Streak reset this shift due to ${cleanBreakReasons.join(', ')}.`);
+      }
 
-        <div class="review-details">
-          <h3>Performance Breakdown</h3>
-          <div class="detail-grid">
-            ${review.detailedFeedback.map(f => `<div class="detail-item">${f}</div>`).join('')}
-          </div>
-        </div>
+      if (isDevMode && careerProgression.requireBribeHandled && !careerProgression.bribeHandledAtRank) {
+        performanceNotes.push('Promotion Blocker: Bribe situation must be handled correctly at least once.');
+      }
+    }
+    if (isDevMode && progressionMetrics?.meetsMisconductRequirement === false) {
+      performanceNotes.push('Promotion Blocker: Open misconduct/write-ups must be cleared.');
+    }
+    if (isWeeklyReview && weekly?.nextWeekDirective?.memo) {
+      performanceNotes.push(`Weekly Directive: ${weekly.nextWeekDirective.memo}`);
+    }
+    if (!performanceNotes.length) {
+      performanceNotes.push('Standard throughput maintained.');
+    }
 
-        <div class="shift-stats">
-          <h3>Shift Summary</h3>
-          <div class="stat-grid">
-            <div class="stat-item"><span class="stat-label">Customers Served</span><span class="stat-value">${summary.customersServed}/${summary.totalCustomers}</span></div>
-            <div class="stat-item"><span class="stat-label">End Time</span><span class="stat-value">${summary.endTime}</span></div>
-            <div class="stat-item"><span class="stat-label">Earnings</span><span class="stat-value">+$${data.shiftResult.earnings}</span></div>
-            <div class="stat-item"><span class="stat-label">Clean Streak</span><span class="stat-value">${data.shiftResult.streak}</span></div>
-          </div>
-        </div>
+    let feedbackSection = '';
+    if (feedbackMode === 'detailed') {
+      feedbackSection = mistakeFeedback.length
+        ? `
+          <h3 class="review-report-section">Mistake Breakdown</h3>
+          <ul class="review-report-list">
+            ${mistakeFeedback.map((entry) => `<li>Case ${entry.caseId}: selected ${entry.selectedAction}${entry.selectedReason ? ` (${entry.selectedReason})` : ''}; expected ${entry.expectedAction}${entry.expectedReason ? ` (${entry.expectedReason})` : ''}. ${entry.explanation || ''}</li>`).join('')}
+          </ul>
+        `
+        : `
+          <h3 class="review-report-section">Mistake Breakdown</h3>
+          <p class="review-report-line">No mistakes recorded this shift.</p>
+        `;
+    } else if (feedbackMode === 'summary') {
+      feedbackSection = mistakeFeedback.length
+        ? `
+          <h3 class="review-report-section">Incorrect Decisions</h3>
+          <ul class="review-report-list">
+            ${mistakeFeedback.map((entry) => `<li>Case ${entry.caseId}: ${entry.selectedAction}${entry.selectedReason ? ` (${entry.selectedReason})` : ''} -> expected ${entry.expectedAction}${entry.expectedReason ? ` (${entry.expectedReason})` : ''}.</li>`).join('')}
+          </ul>
+        `
+        : '';
+    }
 
-        ${eventsHTML}
+    const regularReviewHtml = `
+      <div class="review-card review-card-narrative review-report">
+        <h2>SHIFT #${summary.shiftNumber} COMPLETE</h2>
+        <p class="review-report-department">${departmentLabel}</p>
+        <p class="review-report-separator">--------------------------------</p>
 
-        ${complianceHTML}
+        <p class="review-headline" style="color:${gradeColors[review.grade] || '#fff'}">
+          Grade: ${review.grade} (${review.score} / 100)
+        </p>
 
-        ${weeklyHTML}
+        <p class="review-report-line">Citizens Processed: ${summary.customersServed} / ${summary.totalCustomers}</p>
+        <p class="review-report-line">Revenue Generated: $${data.shiftResult.earnings}</p>
 
-        <div class="consequences-section">
-          <h3>Outcomes</h3>
-          ${review.consequences.map(c => `<p class="consequence">${c}</p>`).join('')}
-        </div>
+        <h3 class="review-report-section">Compliance Report</h3>
+        <ul class="review-report-list">
+          <li>Violations: ${violations}</li>
+          <li>Warnings Issued: ${warningsIssued}</li>
+          <li>Appeals Triggered: ${appealsTriggered}</li>
+        </ul>
 
-        ${achievementsHTML}
+        <h3 class="review-report-section">Performance Notes</h3>
+        <ul class="review-report-list">
+          ${performanceNotes.map((note) => `<li>${note}</li>`).join('')}
+        </ul>
 
-        <div class="career-stats">
-          <h3>Career Overview</h3>
-          <div class="stat-grid">
-            <div class="stat-item"><span class="stat-label">Total Money</span><span class="stat-value">$${stats.money}</span></div>
-            <div class="stat-item"><span class="stat-label">Shifts Completed</span><span class="stat-value">${stats.shiftsCompleted}</span></div>
-            <div class="stat-item"><span class="stat-label">Weekly Rating</span><span class="stat-value">${stats.weeklyPerf}%</span></div>
-            <div class="stat-item"><span class="stat-label">Write-ups</span><span class="stat-value">${stats.writeUps}</span></div>
-            <div class="stat-item"><span class="stat-label">Promotion Progress</span><span class="stat-value">${stats.promotionProgress || 0}</span></div>
-            <div class="stat-item"><span class="stat-label">Supervisor Relationship</span><span class="stat-value">${stats.supervisorRelationship || 0}</span></div>
-            <div class="stat-item"><span class="stat-label">Probation</span><span class="stat-value">${stats.onProbation ? 'Active' : 'No'}</span></div>
-          </div>
-        </div>
+        <h3 class="review-report-section">Supervisor Evaluation</h3>
+        <p class="review-report-quote">"${review.comment}"</p>
+
+        ${feedbackSection}
+        ${morale ? `<p class="review-report-line"><strong>Morale:</strong> ${morale.value}% (${morale.band})</p>` : ''}
+        ${morale?.commentary ? `<p class="review-report-quote">"${morale.commentary}"</p>` : ''}
+        ${resignation.triggered ? `<p class="review-report-line">${resignation.message}</p>` : ''}
+
+        ${earnedAchievements.length > 0
+          ? `
+            <h3 class="review-report-section">Achievements</h3>
+            <ul class="review-report-list">
+              ${earnedAchievements.map((achievement) => `<li>${achievement.name}</li>`).join('')}
+            </ul>
+          `
+          : ''}
       </div>
     `;
+
+    if (this.elements.continueBtn) {
+      this.elements.continueBtn.textContent = resignation.triggered ? '[ RETURN TO TITLE ]' : '[ CONTINUE ]';
+    }
+
+    this.elements.reviewScreen.classList.toggle('dev-review-screen', isDevMode);
+
+    if (isDevMode) {
+      const escapeForPre = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      const debugSummary = {
+        shiftNumber: summary.shiftNumber,
+        department: this.game.player.department,
+        rank: careerProgression?.rankTitle || null,
+        unlockedDepartments: stats?.unlockedDepartments || [],
+        score: review.score,
+        grade: review.grade,
+        shiftResult: data.shiftResult,
+        weeklySummary: weekly,
+        complianceReport: compliance,
+        promotion: departmentPromotion || null,
+        careerPromotion,
+        progressionMetrics
+      };
+
+      const devKpis = [
+        { label: 'Rank', value: careerProgression?.rankTitle || 'Clerk' },
+        { label: 'Rank Progress', value: careerProgression ? `${careerProgression.shiftsAtRank}/${careerProgression.rankShiftTarget}` : 'N/A' },
+        { label: 'Promotion-ready', value: careerProgression ? `${careerProgression.successfulShiftsAtRank}/${careerProgression.requiredSuccessfulShifts}` : 'N/A' },
+        { label: 'Clean Streak To Promotion', value: careerProgression ? `${careerProgression.cleanConsecutiveAtRank}/${careerProgression.requiredCleanConsecutive || 0}` : 'N/A' },
+        { label: 'Probation', value: stats.onProbation ? 'Active' : 'No' }
+      ];
+
+      const devAuditLines = compliance
+        ? [
+          `Audited: ${compliance.audited}`,
+          `Violations: ${compliance.violations}`,
+          `Cleared: ${compliance.cleared}`,
+          `New Appeals: ${compliance.newAppeals}`,
+          `Pending Appeals: ${compliance.pendingAppeals}`
+        ]
+        : ['No audit report generated for this shift.'];
+
+      const devWeeklyLines = weekly
+        ? [
+          `Week #${weekly.weekNumber}`,
+          `Tier: ${weeklyTierLabel[weekly.tier] || weekly.tier}`,
+          `Directive: ${weekly.nextWeekDirective?.memo || 'Standard operations.'}`
+        ]
+        : ['Not an end-of-week resolution shift.'];
+
+      this.elements.reviewContent.innerHTML = `
+        <div class="review-dev-layout">
+          <aside class="review-dev-panel">
+            <h3>Dev Diagnostics</h3>
+            <p class="review-dev-meta">Technical signals only. Player-facing metrics are shown in the report panel.</p>
+
+            <div class="review-dev-kpi-grid">
+              ${devKpis.map((entry) => `
+                <div class="review-dev-kpi">
+                  <span>${entry.label}</span>
+                  <strong>${entry.value}</strong>
+                </div>
+              `).join('')}
+            </div>
+
+            <div class="review-dev-section">
+              <h4>Weekly Resolution</h4>
+              <div class="review-dev-list">
+                ${devWeeklyLines.map((line) => `<p>${line}</p>`).join('')}
+              </div>
+            </div>
+
+            <div class="review-dev-section">
+              <h4>Audit & Appeals</h4>
+              <div class="review-dev-list">
+                ${devAuditLines.map((line) => `<p>${line}</p>`).join('')}
+              </div>
+            </div>
+
+            <div class="review-dev-section">
+              <h4>Generated Achievements</h4>
+              <div class="review-dev-list">
+                ${(earnedAchievements.length > 0
+                  ? earnedAchievements.map((achievement) => `<p>${achievement.id}: ${achievement.name}</p>`)
+                  : ['<p>No achievements generated this shift.</p>'])
+                  .join('')}
+              </div>
+            </div>
+
+            <details class="review-dev-raw">
+              <summary>Raw payload</summary>
+              <pre class="review-dev-pre">${escapeForPre(JSON.stringify(debugSummary, null, 2))}</pre>
+            </details>
+          </aside>
+          <section class="review-main-panel">
+            ${regularReviewHtml}
+          </section>
+        </div>
+      `;
+      return;
+    }
+
+    this.elements.reviewContent.innerHTML = regularReviewHtml;
   }
 
   showEventBanner(event) {

@@ -10,7 +10,11 @@
         "TitleTransfer",
         "DuplicateLicense",
         "AddressChange",
-        "NameChange"
+        "NameChange",
+        "TicketPayment",
+        "TicketAppeal",
+        "PermitApplication",
+        "PermitRenewal"
       ],
       "requiredDocsByRequest": {
         "LicenseRenewal": ["driversLicense", "proofOfResidence"],
@@ -20,7 +24,11 @@
         "TitleTransfer": ["titleDocument", "billOfSale", "driversLicense", "odometerDisclosure"],
         "DuplicateLicense": ["socialSecurityCard", "proofOfResidence"],
         "AddressChange": ["driversLicense", "proofOfResidence"],
-        "NameChange": ["driversLicense", "courtOrder", "proofOfResidence"]
+        "NameChange": ["driversLicense", "courtOrder", "proofOfResidence"],
+        "TicketPayment": ["ticketCitation", "driversLicense"],
+        "TicketAppeal": ["ticketCitation", "driversLicense", "evidencePhotos"],
+        "PermitApplication": ["driversLicense", "proofOfResidence", "vehicleRegistration"],
+        "PermitRenewal": ["parkingPermit", "driversLicense"]
       },
       "fees": {
         "LicenseRenewal": 32,
@@ -30,19 +38,7 @@
         "TitleTransfer": 75,
         "DuplicateLicense": 20,
         "AddressChange": 10,
-        "NameChange": 15
-      }
-    },
-    "Parking": {
-      "name": "Parking Tickets & Violations",
-      "requestTypes": ["TicketPayment", "TicketAppeal", "PermitApplication", "PermitRenewal"],
-      "requiredDocsByRequest": {
-        "TicketPayment": ["ticketCitation", "driversLicense"],
-        "TicketAppeal": ["ticketCitation", "driversLicense", "evidencePhotos"],
-        "PermitApplication": ["driversLicense", "proofOfResidence", "vehicleRegistration"],
-        "PermitRenewal": ["parkingPermit", "driversLicense"]
-      },
-      "fees": {
+        "NameChange": 15,
         "TicketPayment": 0,
         "TicketAppeal": 25,
         "PermitApplication": 60,
@@ -61,6 +57,22 @@
         "VehicleRelease": 150,
         "PropertyClaim": 50,
         "AuctionInquiry": 0
+      }
+    },
+    "BuildingPermits": {
+      "name": "Building Permits & Code Enforcement",
+      "requestTypes": ["BuildingPermit", "BusinessLicense", "NoiseVariance", "CodeComplianceInspection"],
+      "requiredDocsByRequest": {
+        "BuildingPermit": ["driversLicense", "proofOfResidence", "sitePlan", "zoningClearance"],
+        "BusinessLicense": ["driversLicense", "proofOfResidence", "businessRegistration", "taxClearance"],
+        "NoiseVariance": ["driversLicense", "proofOfResidence", "eventPlan", "neighborhoodConsent"],
+        "CodeComplianceInspection": ["driversLicense", "propertyDeed", "inspectionChecklist"]
+      },
+      "fees": {
+        "BuildingPermit": 220,
+        "BusinessLicense": 180,
+        "NoiseVariance": 95,
+        "CodeComplianceInspection": 75
       }
     }
   },

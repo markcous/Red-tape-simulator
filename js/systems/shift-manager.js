@@ -74,24 +74,47 @@ export class ShiftManager {
   sendCustomerToBack(customer) {
     if (!customer) return;
 
-    const servedWindow = Math.max(0, this.currentCustomerIndex);
+    const currentPosition = Math.max(0, this.currentCustomerIndex - 1);
     let foundIndex = -1;
-    for (let i = servedWindow - 1; i >= 0; i--) {
-      const queued = this.customerQueue[i];
-      if (queued?.npcId && queued.npcId === customer.npcId) {
-        foundIndex = i;
-        break;
+
+    // Most common path: the active customer is the just-served slot.
+    if (this.customerQueue[currentPosition] === customer) {
+      foundIndex = currentPosition;
+    }
+
+    // Fallback to object identity search across the queue.
+    if (foundIndex === -1) {
+      foundIndex = this.customerQueue.findIndex((queued) => queued === customer);
+    }
+
+    // Final fallback for save/load or copied objects: match by NPC id.
+    if (foundIndex === -1 && customer?.npcId) {
+      for (let i = currentPosition; i >= 0; i--) {
+        if (this.customerQueue[i]?.npcId === customer.npcId) {
+          foundIndex = i;
+          break;
+        }
+      }
+      if (foundIndex === -1) {
+        for (let i = this.currentCustomerIndex; i < this.customerQueue.length; i++) {
+          if (this.customerQueue[i]?.npcId === customer.npcId) {
+            foundIndex = i;
+            break;
+          }
+        }
       }
     }
 
     if (foundIndex === -1) {
-      this.customerQueue.push(customer);
       return;
     }
 
     const [entry] = this.customerQueue.splice(foundIndex, 1);
     this.customerQueue.push(entry);
-    this.currentCustomerIndex = Math.max(0, this.currentCustomerIndex - 1);
+
+    if (foundIndex < this.currentCustomerIndex) {
+      this.currentCustomerIndex = Math.max(0, this.currentCustomerIndex - 1);
+    }
   }
 
   getQueueStatus() {

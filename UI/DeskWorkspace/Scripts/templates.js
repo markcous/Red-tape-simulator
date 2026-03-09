@@ -13,6 +13,15 @@ const formatCurrency = (value) => {
   return `$${numericValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
+const normalizeSyntheticSsnLabel = (value, fallback = 'XXX-XX-X0000') => {
+  const cleaned = String(value || fallback).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const digits = cleaned.replace(/[A-Z]/g, '');
+  const letters = cleaned.replace(/[0-9]/g, '');
+  const paddedDigits = `${digits}000000000`.slice(0, 9);
+  const marker = letters[0] || 'X';
+  return `${paddedDigits.slice(0, 3)}-${paddedDigits.slice(3, 5)}-${marker}${paddedDigits.slice(5, 9)}`;
+};
+
 const atlasMarkup = (asset, className, alt = 'Photo') => {
   if (!asset || asset.type !== 'atlas' || !asset.image) return '';
   const columns = Math.max(1, Number(asset.columns || 1));
@@ -426,14 +435,18 @@ export const DeskDocumentTemplates = {
 
   socialSecurityCard: ({ person, documentData = {} }) => {
     const holderName = fallbackValue(person.name, 'Card holder on file');
-    const maskedSsn = fallbackValue(documentData.ssn, '***-**-****');
+    const maskedSsn = normalizeSyntheticSsnLabel(documentData.ssn || person.ssn || 'XXX-XX-X0000');
+    const issueCode = `SSA-${DateFormatters.usShort(documentData.issueDate || new Date()).replace(/\//g, '')}`;
 
     return `
       <div class="doc-detail workspace-ssn-card">
+        <div class="ssn-pattern" aria-hidden="true"></div>
+        <div class="ssn-watermark" aria-hidden="true">SOCIAL SECURITY</div>
         <div class="ssn-header">SOCIAL SECURITY ADMINISTRATION</div>
         <h4>SOCIAL SECURITY CARD</h4>
         <div class="ssn-holder-line"><span>NAME</span><strong>${holderName}</strong></div>
         <div class="ssn-number">${maskedSsn}</div>
+        <div class="ssn-issue-code">ISSUED UNDER AUTHORITY CODE ${issueCode}</div>
         <div class="ssn-footer">FOR SOCIAL SECURITY PURPOSES - NOT FOR IDENTIFICATION</div>
       </div>`;
   },
@@ -725,7 +738,7 @@ export const DeskDocumentTemplates = {
     const weightLabel = Number.isFinite(weightLbs) && weightLbs > 0
       ? `${weightLbs} lb`
       : fallbackValue(documentData.weight, '165 lb');
-    const ssnLabel = fallbackValue(documentData.ssn, person.ssn || 'XXX-XX-0000');
+    const ssnLabel = normalizeSyntheticSsnLabel(documentData.ssn || person.ssn || 'XXX-XX-X0000');
     const expLabel = DateFormatters.monthName(dateValue || policy.expDate);
     const categoryLabel = fallbackValue(documentData.category, 'C');
     const restrictionsLabel = fallbackValue(documentData.restrictions, 'None');

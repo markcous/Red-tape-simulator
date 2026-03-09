@@ -38,7 +38,8 @@ export class NPCGenerator {
 
     // Build NPC
     const npc = new NPC({
-      npcId: `npc_${seed.toString(16).padStart(6, '0').slice(0, 6)}`,
+      // Use trailing seed bits plus generation counter to avoid id collisions.
+      npcId: `npc_${seed.toString(16).slice(-8)}_${this.generationCount.toString(16).padStart(4, '0')}`,
       identity,
       appearance,
       personality,
@@ -78,7 +79,8 @@ export class NPCGenerator {
     const ssnArea = rng.nextInt(100, 899);
     const ssnGroup = rng.nextInt(10, 99);
     const ssnSerial = rng.nextInt(1000, 9999);
-    const ssn = `${ssnArea}-${ssnGroup}-${ssnSerial}`;
+    const ssnMarker = rng.pick(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']);
+    const ssn = `${ssnArea}-${ssnGroup}-${ssnMarker}${ssnSerial}`;
     const address = rng.pick(this.catalogs.addresses);
     const phone = `555-${rng.nextInt(100, 999).toString().padStart(3, '0')}-${rng.nextInt(1000, 9999)}`;
     const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com`;
@@ -99,7 +101,7 @@ export class NPCGenerator {
       eyeColor,
       organDonor,
       ssn,
-      ssnMasked: `XXX-XX-${String(ssnSerial).padStart(4, '0')}`,
+      ssnMasked: `XXX-XX-${ssnMarker}${String(ssnSerial).padStart(4, '0')}`,
       address,
       phone,
       email
@@ -219,7 +221,7 @@ export class NPCGenerator {
     // Chronic procrastinator likely has unpaid tickets or expired registration
     if (archetype.id === 'chronic_procrastinator') {
       if (rng.chance(0.5)) {
-        npc.addFlag(new Flag('UNPAID_TICKETS', 'med', 'Parking', 0, {
+        npc.addFlag(new Flag('UNPAID_TICKETS', 'med', 'DMV', 0, {
           count: rng.nextInt(1, 4),
           amountDue: rng.nextInt(50, 300)
         }));

@@ -16,6 +16,7 @@ export class DeskWorkspace {
     this.terminalScreen = 'personLookup';
     this.terminalOpen = false;
     this.terminalContext = null;
+    this.systemCrashLockCaseId = null;
     this.terminalLookupState = {
       personQuery: '',
       vinQuery: '',
@@ -25,7 +26,7 @@ export class DeskWorkspace {
     this.terminalCommandState = {
       input: '',
       history: [],
-      outputLines: ['Developer command console ready. Type HELP for available commands.']
+      outputLines: ['Developer command console ready.']
     };
     this.terminalDatabaseState = {
       selectedNpcId: '',
@@ -60,6 +61,7 @@ export class DeskWorkspace {
           <div class="dmv-terminal-head">
             <div class="dmv-terminal-title">DMV TERMINAL</div>
             <div class="dmv-terminal-controls">
+              <button type="button" class="dmv-terminal-dev-toggle" aria-label="Toggle developer mode" aria-pressed="false">Turn Dev On</button>
               <button type="button" class="dmv-terminal-close" aria-label="Close DMV terminal">Close</button>
             </div>
           </div>
@@ -69,7 +71,6 @@ export class DeskWorkspace {
             <button type="button" class="dmv-terminal-nav-btn" data-screen="case">Case</button>
             <button type="button" class="dmv-terminal-nav-btn" data-screen="actions">Actions</button>
             <button type="button" class="dmv-terminal-nav-btn dmv-terminal-nav-btn-dev" data-screen="commands">Dev</button>
-            <button type="button" class="dmv-terminal-nav-btn dmv-terminal-nav-btn-dev" data-screen="database">Database</button>
           </div>
           <div class="dmv-terminal-body"></div>
         </div>
@@ -100,6 +101,18 @@ export class DeskWorkspace {
 
     this.terminalPanel?.querySelector('.dmv-terminal-close')?.addEventListener('click', () => {
       this.closeTerminal();
+    });
+
+    this.terminalPanel?.querySelector('.dmv-terminal-dev-toggle')?.addEventListener('click', () => {
+      if (typeof this.onTerminalCommand !== 'function') return;
+      const response = this.onTerminalCommand({ command: 'toggle_dev_mode' }) || { ok: false, enabled: this.debugMode };
+      if (typeof response.enabled === 'boolean') {
+        this.setDebugMode(response.enabled);
+      }
+      if (response.message) {
+        this.terminalCommandState.outputLines = [response.message];
+      }
+      this.renderTerminalScreen();
     });
 
     this.terminalPanel?.querySelectorAll('.dmv-terminal-nav-btn').forEach((button) => {
@@ -288,6 +301,20 @@ export class DeskWorkspace {
 
     this.terminalContext = context;
 
+    if (typeof context?.devMode === 'boolean' && context.devMode !== this.debugMode) {
+      this.setDebugMode(context.devMode);
+    }
+
+    if (previousCaseId !== nextCaseId) {
+      this.systemCrashLockCaseId = null;
+    }
+
+    // Latch crash state to the active case so the terminal stays down for the full interaction.
+    const contextCrashEvent = this.getContextSystemCrashEvent();
+    if (contextCrashEvent && nextCaseId) {
+      this.systemCrashLockCaseId = nextCaseId;
+    }
+
     if (shouldResetLookupState) {
       this.terminalLookupState.personResult = null;
       this.terminalLookupState.vinResult = null;
@@ -297,7 +324,7 @@ export class DeskWorkspace {
 
     if (shouldResetCommandState) {
       this.terminalCommandState.history = [];
-      this.terminalCommandState.outputLines = ['Context refreshed. Type STATS to inspect the active customer.'];
+      this.terminalCommandState.outputLines = ['Context refreshed.'];
     }
 
     if (this.isTerminalLockedByCrash()) {
@@ -307,11 +334,31 @@ export class DeskWorkspace {
     this.renderTerminalScreen();
   }
 
-  getActiveSystemCrashEvent() {
+  getContextSystemCrashEvent() {
     const chaosEvents = Array.isArray(this.terminalContext?.activeChaosEvents)
       ? this.terminalContext.activeChaosEvents
       : [];
     return chaosEvents.find((event) => event?.id === 'system_crash') || null;
+  }
+
+  getActiveSystemCrashEvent() {
+    const contextEvent = this.getContextSystemCrashEvent();
+    if (contextEvent) {
+      return { ...contextEvent, lockReason: 'active_event' };
+    }
+
+    const currentCaseId = this.terminalContext?.caseRecord?.caseId || null;
+    if (this.systemCrashLockCaseId && currentCaseId && this.systemCrashLockCaseId === currentCaseId) {
+      return {
+        id: 'system_crash',
+        name: 'Computer System Crash',
+        description: 'Crash remains active for the current customer.',
+        lockReason: 'case_latched',
+        remainingDuration: null
+      };
+    }
+
+    return null;
   }
 
   isTerminalLockedByCrash() {
@@ -818,42 +865,6 @@ export class DeskWorkspace {
     `;
   }
 
-  getCustomerStatsSnapshot() {
-    const npc = this.terminalContext?.npc || {};
-    const caseRecord = this.terminalContext?.caseRecord || {};
-    const riskFlags = Array.isArray(npc.flags) ? npc.flags : [];
-    const requiredDocs = caseRecord?.inputs?.requiredDocs || [];
-    const presentDocCount = Object.values(caseRecord?.inputs?.providedDocs || {}).filter((doc) => doc?.present).length;
-    const serviceState = this.terminalContext?.serviceState || {};
-    const waitRemaining = Number(serviceState?.waitRemaining ?? 0);
-    const waitTotal = Math.max(1, Number(serviceState?.waitTotal ?? 0));
-    const patiencePercent = Number.isFinite(Number(serviceState?.patiencePercent))
-      ? Math.max(0, Math.min(1, Number(serviceState.patiencePercent)))
-      : (waitTotal > 0 ? waitRemaining / waitTotal : 0);
-    const patienceLabel = `${Math.round(patiencePercent * 100)}% (${waitRemaining}/${waitTotal} ticks)`;
-    const queueStatus = serviceState?.queueStatus || {};
-
-    return [
-      { label: 'Name', value: npc.fullName || 'Unknown' },
-      { label: 'NPC ID', value: npc.npcId || 'N/A' },
-      { label: 'Age', value: npc.identity?.age ?? 'N/A' },
-      { label: 'Temperament', value: npc.personality?.temperament || 'N/A' },
-      { label: 'Patience Trait', value: npc.personality?.patience ?? 'N/A' },
-      { label: 'Patience Remaining', value: patienceLabel },
-      { label: 'Escalation Stage', value: serviceState?.hasEscalated ? 'Final warning active' : 'Normal' },
-      { label: 'Income Bracket', value: npc.socioEconomic?.incomeBracket || 'N/A' },
-      { label: 'Agency Reputation', value: npc.reputation?.towardAgency ?? 0 },
-      { label: 'Clerk Reputation', value: npc.reputation?.towardPlayer ?? 0 },
-      { label: 'Case ID', value: caseRecord.caseId || 'N/A' },
-      { label: 'Request Type', value: caseRecord.requestType || 'N/A' },
-      { label: 'Queue Remaining', value: queueStatus?.remaining ?? 'N/A' },
-      { label: 'Case Fee', value: `$${caseRecord?.inputs?.fee || 0}` },
-      { label: 'Required Docs', value: requiredDocs.length },
-      { label: 'Submitted Docs', value: presentDocCount },
-      { label: 'Risk Flags', value: riskFlags.length ? riskFlags.map((flag) => flag.flagId).join(', ') : 'None' }
-    ];
-  }
-
   getCommandCatalog() {
     const devTerminal = this.terminalContext?.devTerminal || {};
     const requestForms = Array.isArray(devTerminal.requestForms) ? devTerminal.requestForms : [];
@@ -862,9 +873,9 @@ export class DeskWorkspace {
       requestForms,
       documentForms,
       lines: [
-        'HELP',
-        'STATS',
-        'FORMS',
+        'OPEN DATABASE',
+        'END SHIFT NOW',
+        'SKIP NEXT WEEK',
         'SPAWN CASE PACKET',
         'CLEAR DESK',
         'SPAWN REQUEST <RequestType>',
@@ -965,7 +976,7 @@ export class DeskWorkspace {
 
     const input = String(rawInput || '').trim();
     if (!input) {
-      this.setCommandOutput(input, ['No command entered. Type HELP for options.']);
+      this.setCommandOutput(input, ['No command entered.']);
       return;
     }
 
@@ -976,27 +987,9 @@ export class DeskWorkspace {
     const argument = tokens.slice(2).join(' ').trim();
     const catalog = this.getCommandCatalog();
 
-    if (normalized === 'help') {
-      this.setCommandOutput(input, [
-        'Available commands:',
-        ...catalog.lines
-      ]);
-      return;
-    }
-
-    if (normalized === 'stats') {
-      const statsLines = this.getCustomerStatsSnapshot().map((entry) => `${entry.label}: ${entry.value}`);
-      this.setCommandOutput(input, statsLines);
-      return;
-    }
-
-    if (normalized === 'forms') {
-      const requestList = catalog.requestForms.map((entry) => entry.id).join(', ') || 'None';
-      const docList = catalog.documentForms.map((entry) => entry.id).join(', ') || 'None';
-      this.setCommandOutput(input, [
-        `Request forms (${catalog.requestForms.length}): ${requestList}`,
-        `Document forms (${catalog.documentForms.length}): ${docList}`
-      ]);
+    if (normalized === 'open database' || normalized === 'database') {
+      this.terminalScreen = 'database';
+      this.setCommandOutput(input, ['Opening database editor...']);
       return;
     }
 
@@ -1017,6 +1010,42 @@ export class DeskWorkspace {
       return;
     }
 
+    if (normalized === 'end shift now' || normalized === 'skip to shift end' || normalized === 'end shift') {
+      if (typeof this.onTerminalCommand !== 'function') {
+        this.setCommandOutput(input, ['Terminal command handler is not available.']);
+        return;
+      }
+
+      const response = this.onTerminalCommand({
+        command: 'end_shift',
+        context: this.terminalContext
+      }) || { ok: false, message: 'Command failed.' };
+
+      const output = Array.isArray(response.outputLines) && response.outputLines.length
+        ? response.outputLines
+        : [response.message || (response.ok ? 'Command completed.' : 'Command failed.')];
+      this.setCommandOutput(input, output);
+      return;
+    }
+
+    if (normalized === 'skip next week' || normalized === 'skip week') {
+      if (typeof this.onTerminalCommand !== 'function') {
+        this.setCommandOutput(input, ['Terminal command handler is not available.']);
+        return;
+      }
+
+      const response = this.onTerminalCommand({
+        command: 'skip_week',
+        context: this.terminalContext
+      }) || { ok: false, message: 'Command failed.' };
+
+      const output = Array.isArray(response.outputLines) && response.outputLines.length
+        ? response.outputLines
+        : [response.message || (response.ok ? 'Command completed.' : 'Command failed.')];
+      this.setCommandOutput(input, output);
+      return;
+    }
+
     if (command === 'spawn' && (subcommand === 'request' || subcommand === 'doc')) {
       if (!argument) {
         this.setCommandOutput(input, ['Missing form id. Example: SPAWN REQUEST LicenseRenewal']);
@@ -1034,11 +1063,14 @@ export class DeskWorkspace {
         id: argument,
         context: this.terminalContext
       }) || { ok: false, message: 'Command failed.' };
-      this.setCommandOutput(input, [response.message || (response.ok ? 'Command completed.' : 'Command failed.')]);
+      const output = Array.isArray(response.outputLines) && response.outputLines.length
+        ? response.outputLines
+        : [response.message || (response.ok ? 'Command completed.' : 'Command failed.')];
+      this.setCommandOutput(input, output);
       return;
     }
 
-    this.setCommandOutput(input, ['Unknown command. Type HELP for available commands.']);
+    this.setCommandOutput(input, ['Unknown command.']);
   }
 
   spawnCasePacketFromActiveScenario({ rawInput = 'SPAWN CASE PACKET', writeOutput = false } = {}) {
@@ -1067,6 +1099,7 @@ export class DeskWorkspace {
 
   renderTerminalScreen() {
     if (!this.terminalBody) return;
+    this.updateDevToggleButton();
 
     const systemCrashEvent = this.getActiveSystemCrashEvent();
     const terminalLocked = Boolean(systemCrashEvent);
@@ -1091,8 +1124,12 @@ export class DeskWorkspace {
     this.terminalPanel?.classList.toggle('system-crash', terminalLocked);
 
     if (terminalLocked) {
-      const estimatedRecovery = Number(systemCrashEvent?.remainingDuration || 0);
+      const hasDurationEstimate = Number.isFinite(Number(systemCrashEvent?.remainingDuration));
+      const estimatedRecovery = hasDurationEstimate ? Number(systemCrashEvent?.remainingDuration) : 0;
       const customerLabel = estimatedRecovery === 1 ? 'customer' : 'customers';
+      const etaLabel = hasDurationEstimate
+        ? `~${estimatedRecovery} ${customerLabel} remaining`
+        : 'Until current customer is resolved';
       this.terminalBody.innerHTML = `
         <div class="dmv-terminal-block dmv-terminal-crash-block" role="alert" aria-live="assertive">
           <div class="dmv-terminal-subtitle">System Error</div>
@@ -1100,7 +1137,7 @@ export class DeskWorkspace {
           <p class="dmv-terminal-note">The DMV database is currently offline. Terminal actions are locked until service is restored.</p>
           <div class="dmv-terminal-line"><span>Status</span><strong>OFFLINE</strong></div>
           <div class="dmv-terminal-line"><span>Error Code</span><strong>DMV-DB-CRASH</strong></div>
-          <div class="dmv-terminal-line"><span>ETA</span><strong>~${estimatedRecovery} ${customerLabel} remaining</strong></div>
+          <div class="dmv-terminal-line"><span>ETA</span><strong>${etaLabel}</strong></div>
           <div class="dmv-terminal-empty">No lookups, case actions, or command tools are available during this outage.</div>
         </div>
       `;
@@ -1198,9 +1235,6 @@ export class DeskWorkspace {
     }
 
     if (this.terminalScreen === 'commands') {
-      const statsMarkup = this.getCustomerStatsSnapshot()
-        .map((entry) => `<div class="dmv-terminal-line"><span>${this.escapeHtml(entry.label)}</span><strong>${this.escapeHtml(entry.value)}</strong></div>`)
-        .join('');
       const catalog = this.getCommandCatalog();
       const requestButtons = catalog.requestForms
         .slice(0, 8)
@@ -1213,22 +1247,20 @@ export class DeskWorkspace {
 
       this.terminalBody.innerHTML = `
         <div class="dmv-terminal-block">
-          <div class="dmv-terminal-subtitle">Customer Stats Monitor</div>
-          <div class="dmv-terminal-stats-grid">${statsMarkup}</div>
-
-          <div class="dmv-terminal-quick-actions">
-            <button type="button" data-command="HELP">HELP</button>
-            <button type="button" data-command="STATS">STATS</button>
-            <button type="button" data-command="FORMS">FORMS</button>
+          <div class="dmv-terminal-subtitle">Dev Quick Actions</div>
+          <div class="dmv-terminal-quick-actions dev-top-grid">
+            <button type="button" data-command="END SHIFT NOW">END SHIFT NOW</button>
+            <button type="button" data-command="SKIP NEXT WEEK">SKIP NEXT WEEK</button>
+            <button type="button" data-command="OPEN DATABASE">OPEN DATABASE</button>
             <button type="button" data-command="SPAWN CASE PACKET">SPAWN CASE PACKET</button>
             <button type="button" data-command="CLEAR DESK">CLEAR DESK</button>
           </div>
 
           <div class="dmv-terminal-subtitle">Quick Spawn Request Forms</div>
-          <div class="dmv-terminal-quick-actions wrap">${requestButtons || '<button type="button" data-command="FORMS">No request forms indexed</button>'}</div>
+          <div class="dmv-terminal-quick-actions wrap">${requestButtons || '<span class="dmv-terminal-empty">No request forms indexed.</span>'}</div>
 
           <div class="dmv-terminal-subtitle">Quick Spawn Document Forms</div>
-          <div class="dmv-terminal-quick-actions wrap">${docButtons || '<button type="button" data-command="FORMS">No document forms indexed</button>'}</div>
+          <div class="dmv-terminal-quick-actions wrap">${docButtons || '<span class="dmv-terminal-empty">No document forms indexed.</span>'}</div>
         </div>
       `;
       return;
@@ -1335,6 +1367,15 @@ export class DeskWorkspace {
     });
   }
 
+  updateDevToggleButton() {
+    const button = this.terminalPanel?.querySelector('.dmv-terminal-dev-toggle');
+    if (!button) return;
+    button.textContent = this.debugMode ? 'Turn Dev Off' : 'Turn Dev On';
+    button.setAttribute('aria-pressed', this.debugMode ? 'true' : 'false');
+    button.setAttribute('aria-label', this.debugMode ? 'Turn developer mode off' : 'Turn developer mode on');
+    button.classList.toggle('active', this.debugMode);
+  }
+
   setDebugMode(enabled) {
     this.debugMode = Boolean(enabled);
     this.applyDebugState();
@@ -1349,6 +1390,7 @@ export class DeskWorkspace {
     this.terminalPanel?.querySelectorAll('.dmv-terminal-nav-btn-dev').forEach((button) => {
       button.classList.toggle('hidden', !this.debugMode);
     });
+    this.updateDevToggleButton();
     if (!this.debugMode && this.terminalScreen === 'commands') {
       this.terminalScreen = 'case';
     }

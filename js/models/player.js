@@ -3,7 +3,7 @@ export class PlayerState {
     this.playerId = 'player_1';
     this.name = 'New Clerk';
     this.department = 'DMV';
-    this.role = 'clerk'; // clerk -> supervisor -> director
+    this.role = 'clerk'; // clerk -> senior_clerk -> supervisor -> director
     this.shiftNumber = 0;
     this.weekNumber = 0;
     this.money = 0;
@@ -33,6 +33,7 @@ export class PlayerState {
     this.totalWriteUps = 0;
     this.onProbation = false;
     this.promotionProgress = 0;
+    this.progressionState = null;
 
     // Supervisor relationship
     this.supervisorType = 'byTheBook'; // will be assigned
@@ -234,6 +235,9 @@ export class PlayerState {
   static fromJSON(data) {
     const player = new PlayerState();
     Object.assign(player, data);
+    if (!player.progressionState || typeof player.progressionState !== 'object') {
+      player.progressionState = null;
+    }
     return player;
   }
 }
