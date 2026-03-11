@@ -94,6 +94,15 @@ export class PlayerState {
     }
 
     this.performance.allTimeStats.totalCasesProcessed++;
+
+    if (caseResult?.caseId) {
+      perf.events.push({
+        type: 'case',
+        caseId: String(caseResult.caseId),
+        correct: Boolean(caseResult.correct),
+        sentiment: String(caseResult.sentiment || 'neutral')
+      });
+    }
   }
 
   recordBribe(accepted) {
@@ -119,6 +128,10 @@ export class PlayerState {
   calculateShiftScore(balancing) {
     const perf = this.performance.currentShift;
     const target = 7; // target cases per shift
+    const safeNumber = (value, fallback = 0) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : fallback;
+    };
 
     // Accuracy score
     const totalDecisions = perf.correctDecisions + perf.incorrectDecisions;
@@ -130,7 +143,7 @@ export class PlayerState {
     const throughputScore = Math.min(100, (perf.casesProcessed / target) * 100);
 
     // Customer sentiment score
-    const sentimentMap = balancing.sentiment;
+    const sentimentMap = balancing?.sentiment || {};
     let sentimentTotal = 0;
     if (perf.customerSentiments.length > 0) {
       for (const s of perf.customerSentiments) {
@@ -143,33 +156,62 @@ export class PlayerState {
 
     // Penalties
     let penalties = 0;
-    penalties += perf.policyErrors.minor * balancing.penalties.minorError;
-    penalties += perf.policyErrors.major * balancing.penalties.majorError;
-    penalties += perf.complaints * balancing.penalties.complaint;
-    penalties += perf.bribesAccepted * (balancing.penalties.bribe[this.supervisorType] || 20);
+    penalties += safeNumber(perf.policyErrors.minor, 0) * safeNumber(balancing?.penalties?.minorError, 5);
+    penalties += safeNumber(perf.policyErrors.major, 0) * safeNumber(balancing?.penalties?.majorError, 15);
+    penalties += safeNumber(perf.complaints, 0) * safeNumber(balancing?.penalties?.complaint, 10);
+    const bribePenaltyTable = balancing?.penalties?.bribe || {};
+    const bribePenalty = safeNumber(bribePenaltyTable[this.supervisorType], 20);
+    penalties += safeNumber(perf.bribesAccepted, 0) * bribePenalty;
+
+    // Keep penalties meaningful without letting one rough shift collapse every score to zero.
+    const normalizedPenalty = safeNumber(Math.min(80, penalties * 0.75), 0);
 
     // Streak bonus
     const streakBonus = this.streakBonus;
 
     // Final score
-    const w = balancing.weights;
+    const configuredWeights = balancing?.weights || {};
+    const w = {
+      accuracy: safeNumber(configuredWeights.accuracy, 0.5),
+      throughput: safeNumber(configuredWeights.throughput, 0.2),
+      customer: safeNumber(configuredWeights.customer, 0.3)
+    };
     const baseScore =
       (accuracyScore * w.accuracy) +
       (throughputScore * w.throughput) +
       (sentimentTotal * w.customer);
 
-    const finalScore = Math.max(0, Math.min(100, baseScore + streakBonus - penalties));
+    const rawFinalScore = safeNumber(baseScore, 0) + safeNumber(streakBonus, 0) - normalizedPenalty;
+    let finalScore = Math.max(0, Math.min(100, safeNumber(rawFinalScore, 0)));
+
+    const flawlessShift =
+      totalDecisions > 0
+      && safeNumber(perf.incorrectDecisions, 0) === 0
+      && safeNumber(perf.policyErrors?.minor, 0) === 0
+      && safeNumber(perf.policyErrors?.major, 0) === 0
+      && safeNumber(perf.complaints, 0) === 0
+      && safeNumber(perf.bribesAccepted, 0) === 0;
+
+    // Correct denials can still reduce sentiment; keep flawless policy execution in top-tier grading.
+    if (flawlessShift) {
+      finalScore = Math.max(finalScore, 95);
+    }
 
     perf.accuracyScore = accuracyScore;
     perf.throughputScore = throughputScore;
     perf.customerSentimentScore = sentimentTotal;
-    perf.penalties = penalties;
+    perf.penalties = normalizedPenalty;
 
-    return Math.round(finalScore);
+    return Math.round(safeNumber(finalScore, 0));
   }
 
-  endShift(balancing) {
-    const score = this.calculateShiftScore(balancing);
+  endShift(balancing, options = {}) {
+    const hasForcedScore = options?.forcedScore !== null && options?.forcedScore !== undefined;
+    const forcedScore = hasForcedScore ? Number(options.forcedScore) : NaN;
+    const rawScore = Number.isFinite(forcedScore)
+      ? Math.max(0, Math.min(100, Math.round(forcedScore)))
+      : this.calculateShiftScore(balancing);
+    const score = Number.isFinite(rawScore) ? rawScore : 0;
     this.performance.weeklyScores.push(score);
     this.money += this.salary;
     this.shiftsCompleted++;

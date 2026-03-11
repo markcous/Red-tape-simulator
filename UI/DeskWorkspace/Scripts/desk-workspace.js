@@ -501,7 +501,8 @@ export class DeskWorkspace {
     const impoundHold = flags.some((flag) => flag?.flagId === 'IMPOUND_HOLD');
     const dlFromObservation = String(observations.licenseNumber || '').trim();
     const dlFromSeed = `DL${String((seed % 900000) + 100000)}`;
-    const generatedSsn = `${rng.nextInt(100, 899)}-${rng.nextInt(10, 99)}-${String(rng.nextInt(1000, 9999)).padStart(4, '0')}`;
+    const ssnMarker = rng.pick(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']) || 'X';
+    const generatedSsn = `${rng.nextInt(100, 899)}-${rng.nextInt(10, 99)}-${ssnMarker}${String(rng.nextInt(100, 999)).padStart(3, '0')}`;
     const heightInches = rng.nextInt(58, 78);
     const weightLbs = rng.nextInt(110, 280);
     const firstName = String(npc?.identity?.firstName || '').trim();
@@ -869,13 +870,17 @@ export class DeskWorkspace {
     const devTerminal = this.terminalContext?.devTerminal || {};
     const requestForms = Array.isArray(devTerminal.requestForms) ? devTerminal.requestForms : [];
     const documentForms = Array.isArray(devTerminal.documentForms) ? devTerminal.documentForms : [];
+    const miniGames = Array.isArray(devTerminal.miniGames) ? devTerminal.miniGames : [];
     return {
       requestForms,
       documentForms,
+      miniGames,
       lines: [
         'OPEN DATABASE',
         'END SHIFT NOW',
+        'END SHIFT GRADE <S|A|B|C|D|F>',
         'SKIP NEXT WEEK',
+        'LAUNCH MINIGAME <MiniGameId>',
         'SPAWN CASE PACKET',
         'CLEAR DESK',
         'SPAWN REQUEST <RequestType>',
@@ -1010,14 +1015,18 @@ export class DeskWorkspace {
       return;
     }
 
-    if (normalized === 'end shift now' || normalized === 'skip to shift end' || normalized === 'end shift') {
+    const endShiftMatch = normalized.match(/^(?:end shift(?: now)?|skip to shift end)(?: grade ([sabcdf]))?$/);
+    if (endShiftMatch) {
       if (typeof this.onTerminalCommand !== 'function') {
         this.setCommandOutput(input, ['Terminal command handler is not available.']);
         return;
       }
 
+      const forcedGrade = endShiftMatch[1] ? endShiftMatch[1].toUpperCase() : null;
+
       const response = this.onTerminalCommand({
         command: 'end_shift',
+        forcedGrade,
         context: this.terminalContext
       }) || { ok: false, message: 'Command failed.' };
 
@@ -1039,6 +1048,29 @@ export class DeskWorkspace {
         context: this.terminalContext
       }) || { ok: false, message: 'Command failed.' };
 
+      const output = Array.isArray(response.outputLines) && response.outputLines.length
+        ? response.outputLines
+        : [response.message || (response.ok ? 'Command completed.' : 'Command failed.')];
+      this.setCommandOutput(input, output);
+      return;
+    }
+
+    if (command === 'launch' && (subcommand === 'minigame' || subcommand === 'mini-game')) {
+      if (!argument) {
+        this.setCommandOutput(input, ['Missing mini-game id. Example: LAUNCH MINIGAME parking_fine_payment']);
+        return;
+      }
+
+      if (typeof this.onTerminalCommand !== 'function') {
+        this.setCommandOutput(input, ['Terminal command handler is not available.']);
+        return;
+      }
+
+      const response = this.onTerminalCommand({
+        command: 'launch_minigame',
+        id: argument,
+        context: this.terminalContext
+      }) || { ok: false, message: 'Command failed.' };
       const output = Array.isArray(response.outputLines) && response.outputLines.length
         ? response.outputLines
         : [response.message || (response.ok ? 'Command completed.' : 'Command failed.')];
@@ -1244,6 +1276,9 @@ export class DeskWorkspace {
         .slice(0, 8)
         .map((entry) => `<button type="button" data-command="SPAWN DOC ${this.escapeHtml(entry.id)}">${this.escapeHtml(entry.id)}</button>`)
         .join('');
+      const miniGameButtons = catalog.miniGames
+        .map((entry) => `<button type="button" data-command="LAUNCH MINIGAME ${this.escapeHtml(entry.id)}">${this.escapeHtml(entry.label || entry.id)}</button>`)
+        .join('');
 
       this.terminalBody.innerHTML = `
         <div class="dmv-terminal-block">
@@ -1255,6 +1290,19 @@ export class DeskWorkspace {
             <button type="button" data-command="SPAWN CASE PACKET">SPAWN CASE PACKET</button>
             <button type="button" data-command="CLEAR DESK">CLEAR DESK</button>
           </div>
+
+          <div class="dmv-terminal-subtitle">End Shift With Grade</div>
+          <div class="dmv-terminal-quick-actions dev-grade-grid">
+            <button type="button" data-command="END SHIFT GRADE S">GRADE S</button>
+            <button type="button" data-command="END SHIFT GRADE A">GRADE A</button>
+            <button type="button" data-command="END SHIFT GRADE B">GRADE B</button>
+            <button type="button" data-command="END SHIFT GRADE C">GRADE C</button>
+            <button type="button" data-command="END SHIFT GRADE D">GRADE D</button>
+            <button type="button" data-command="END SHIFT GRADE F">GRADE F</button>
+          </div>
+
+          <div class="dmv-terminal-subtitle">Mini-Game Launchers</div>
+          <div class="dmv-terminal-quick-actions wrap">${miniGameButtons || '<span class="dmv-terminal-empty">No mini-games indexed.</span>'}</div>
 
           <div class="dmv-terminal-subtitle">Quick Spawn Request Forms</div>
           <div class="dmv-terminal-quick-actions wrap">${requestButtons || '<span class="dmv-terminal-empty">No request forms indexed.</span>'}</div>

@@ -11,6 +11,19 @@ import {
 } from './systems/progression-system.js';
 import { SeededRNG } from './models/rng.js';
 import { NPC, Flag } from './models/npc.js';
+import { buildParkingFinePaymentSession } from './minigames/parking-fine-payment/logic.js';
+import {
+  advancePaymentTimer,
+  clickCitizenBill,
+  clickDrawerBill,
+  submitPayment
+} from './minigames/parking-fine-payment/interaction.js';
+import { buildDMVVisionTestSession } from './minigames/dmv-vision-test/logic.js';
+import {
+  advanceVisionTestTimer,
+  issueVisionVerdict,
+  revealNextVisionLine
+} from './minigames/dmv-vision-test/interaction.js';
 
 export const GamePhase = Object.freeze({
   LOADING: 'loading',
@@ -18,6 +31,8 @@ export const GamePhase = Object.freeze({
   SHIFT_START: 'shift_start',
   SERVING: 'serving',
   DOC_REQUEST: 'doc_request',
+  PARKING_FINE_PAYMENT: 'parking_fine_payment',
+  DMV_VISION_TEST: 'dmv_vision_test',
   RESULT: 'result',
   BRIBE: 'bribe',
   REVIEW: 'review'
@@ -160,11 +175,16 @@ export class Game {
       shiftStaffingCut: false,
       morale: 100,
       resignationTriggered: false,
+      shiftOverGraceNotified: false,
+      parkingFinePayment: null,
+      dmvVisionTest: null,
       settings: this.getDefaultSettings()
     };
 
     this.runRng = new SeededRNG(this.gameState.seed);
     this.serviceTicker = null;
+    this.parkingFinePaymentTicker = null;
+    this.dmvVisionTestTicker = null;
 
     // UI callback
     this.onStateChange = null;
@@ -317,6 +337,8 @@ export class Game {
         slot: normalizedSlot,
         isEmpty: true,
         careerName: 'Empty Slot',
+        rankTitle: null,
+        weekNumber: 0,
         shiftNumber: 0,
         difficulty: 'easy',
         difficultyLabel: this.getDifficultyProfile('easy').label,
@@ -326,6 +348,8 @@ export class Game {
 
     const careerName = String(save?.player?.name || '').trim() || 'Unnamed Career';
     const shiftNumber = Math.max(0, Number(save?.player?.shiftNumber || 0));
+    const weekNumber = Math.max(1, Math.ceil(Math.max(1, shiftNumber) / 5));
+    const rankTitle = buildCareerSnapshot(save?.player?.progressionState).rankTitle || null;
     const difficulty = this.normalizeDifficulty(save?.gameState?.difficulty || 'easy');
     const lastPlayedAt = save?.gameState?.lastPlayedAt || null;
 
@@ -333,6 +357,8 @@ export class Game {
       slot: normalizedSlot,
       isEmpty: false,
       careerName,
+      rankTitle,
+      weekNumber,
       shiftNumber,
       difficulty,
       difficultyLabel: this.getDifficultyProfile(difficulty).label,
@@ -696,6 +722,10 @@ export class Game {
 
   returnToMenu() {
     this.stopServiceTicker();
+    this.stopParkingFinePaymentTicker();
+    this.stopDMVVisionTestTicker();
+    this.gameState.parkingFinePayment = null;
+    this.gameState.dmvVisionTest = null;
     this.state = GamePhase.MENU;
     this.emit('stateChange', { state: this.state });
   }
@@ -731,6 +761,27 @@ export class Game {
       type: 'devMode',
       enabled: this.gameState.developmentMode
     });
+  }
+
+  normalizePerformanceGrade(value) {
+    const normalized = String(value || '').trim().toUpperCase();
+    return ['S', 'A', 'B', 'C', 'D', 'F'].includes(normalized) ? normalized : null;
+  }
+
+  getForcedScoreForGrade(grade) {
+    const normalized = this.normalizePerformanceGrade(grade);
+    if (!normalized) return null;
+
+    const scoreByGrade = {
+      S: 97,
+      A: 92,
+      B: 85,
+      C: 75,
+      D: 65,
+      F: 45
+    };
+
+    return scoreByGrade[normalized] ?? null;
   }
 
   setManualOpen(isOpen) {
@@ -886,22 +937,34 @@ export class Game {
     return `${feet}'${String(remainder).padStart(2, '0')}"`;
   }
 
-  normalizeSyntheticSsn(rawValue, fallback = '000000X0000') {
+  normalizeSyntheticSsn(rawValue, fallback = '00000X000') {
     const cleaned = String(rawValue || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     const digits = cleaned.replace(/[A-Z]/g, '');
     const letters = cleaned.replace(/[0-9]/g, '');
-    const paddedDigits = (digits + fallback).replace(/[^0-9]/g, '').slice(0, 9).padEnd(9, '0');
+    const paddedDigits = (digits + fallback).replace(/[^0-9]/g, '').slice(0, 8).padEnd(8, '0');
     const marker = (letters[0] || 'X').toUpperCase();
     const area = paddedDigits.slice(0, 3);
     const group = paddedDigits.slice(3, 5);
-    const serial = paddedDigits.slice(5, 9);
+    const serial = paddedDigits.slice(5, 8);
     return `${area}-${group}-${marker}${serial}`;
   }
 
   maskSyntheticSsn(rawValue) {
     const normalized = this.normalizeSyntheticSsn(rawValue);
-    const suffix = normalized.split('-')[2] || 'X0000';
+    const suffix = normalized.split('-')[2] || 'X000';
     return `XXX-XX-${suffix}`;
+  }
+
+  normalizeDriverLicenseNumber(rawValue, fallbackDigits = null) {
+    const cleaned = String(rawValue || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const digitsOnly = cleaned.replace(/[^0-9]/g, '');
+
+    if (digitsOnly.length >= 6) {
+      return `DL${digitsOnly.slice(-6)}`;
+    }
+
+    const fallback = String(fallbackDigits || '').replace(/[^0-9]/g, '').padEnd(6, '0');
+    return `DL${fallback.slice(0, 6) || '000000'}`;
   }
 
   ensureAgencyPersonRecord(npc) {
@@ -929,7 +992,9 @@ export class Game {
         ? 'No'
         : (existing.organDonor || fallbackDonor);
     const resolvedSex = String(existing.sex || npc?.identity?.sex || fallbackSex);
-    const resolvedSsn = this.normalizeSyntheticSsn(existing.ssn || npc?.identity?.ssn || npc?.identity?.ssnMasked || '000000X0000');
+    const resolvedSsn = this.normalizeSyntheticSsn(existing.ssn || npc?.identity?.ssn || npc?.identity?.ssnMasked || '00000X000');
+    const fallbackDlDigits = String(rng.nextInt(100000, 999999));
+    const resolvedDlNumber = this.normalizeDriverLicenseNumber(existing.dlNumber || npc?.identity?.licenseNumber || '', fallbackDlDigits);
 
     const fullName = npc.fullName || `${npc?.identity?.firstName || ''} ${npc?.identity?.lastName || ''}`.trim() || existing.name || 'Unknown';
     const next = {
@@ -943,7 +1008,7 @@ export class Game {
       address: existing.address || npc?.identity?.address || 'On file',
       phone: existing.phone || npc?.identity?.phone || 'On file',
       email: existing.email || npc?.identity?.email || 'On file',
-      dlNumber: existing.dlNumber || '',
+      dlNumber: resolvedDlNumber,
       eyeColor: resolvedEyeColor,
       hairColor: resolvedHairColor,
       sex: resolvedSex,
@@ -981,7 +1046,7 @@ export class Game {
     npc.identity.address = person.address || npc.identity.address;
     npc.identity.phone = person.phone || npc.identity.phone;
     npc.identity.email = person.email || npc.identity.email;
-    npc.identity.ssn = this.normalizeSyntheticSsn(person.ssn || npc.identity.ssn || npc.identity.ssnMasked || '000000X0000');
+    npc.identity.ssn = this.normalizeSyntheticSsn(person.ssn || npc.identity.ssn || npc.identity.ssnMasked || '00000X000');
     npc.identity.ssnMasked = this.maskSyntheticSsn(npc.identity.ssn);
     npc.identity.sex = person.sex || npc.identity.sex;
     npc.identity.eyeColor = person.eyeColor || npc.identity.eyeColor;
@@ -1029,11 +1094,11 @@ export class Game {
     next.firstName = String(next.firstName || '').trim() || existing.firstName;
     next.lastName = String(next.lastName || '').trim() || existing.lastName;
     next.dob = String(next.dob || '').trim() || existing.dob;
-    next.ssn = this.normalizeSyntheticSsn(String(next.ssn || '').trim() || existing.ssn || '000000X0000');
+    next.ssn = this.normalizeSyntheticSsn(String(next.ssn || '').trim() || existing.ssn || '00000X000');
     next.address = String(next.address || '').trim() || existing.address;
     next.phone = String(next.phone || '').trim() || existing.phone;
     next.email = String(next.email || '').trim() || existing.email;
-    next.dlNumber = String(next.dlNumber || '').trim() || existing.dlNumber;
+    next.dlNumber = this.normalizeDriverLicenseNumber(String(next.dlNumber || '').trim() || existing.dlNumber || '', id.replace(/[^0-9]/g, '').slice(0, 6));
     next.sex = String(next.sex || '').trim() || existing.sex;
     next.eyeColor = String(next.eyeColor || '').trim() || existing.eyeColor;
     next.hairColor = String(next.hairColor || '').trim() || existing.hairColor;
@@ -1147,20 +1212,25 @@ export class Game {
     const docs = caseData.documents || {};
     Object.values(docs).forEach((doc) => {
       if (!doc?.present || !doc?.data) return;
+      const hasDocError = (errorCode) => Array.isArray(doc?.errors) && doc.errors.includes(errorCode);
 
       // Preserve generated old/new legal identity continuity for name-change scenarios.
-      if (!isNameChangeCase) {
+      if (!isNameChangeCase && !hasDocError('name_mismatch')) {
         doc.data.holderName = person.name;
         doc.data.fullName = person.name;
       }
 
-      doc.data.address = person.address;
+      if (!hasDocError('wrong_address')) {
+        doc.data.address = person.address;
+      }
       doc.data.dob = person.dob;
       doc.data.ssn = person.ssn;
       doc.data.licenseNumber = doc.data.licenseNumber || person.dlNumber;
       doc.data.sex = person.sex;
-      doc.data.eyeColor = person.eyeColor;
-      doc.data.hairColor = person.hairColor;
+      if (!hasDocError('physical_mismatch')) {
+        doc.data.eyeColor = person.eyeColor;
+        doc.data.hairColor = person.hairColor;
+      }
       doc.data.organDonor = person.organDonor;
       doc.data.ertc = doc.data.ertc || person.ertc || '';
       doc.data.restrictions = doc.data.restrictions || person.restrictions || 'None';
@@ -1250,6 +1320,69 @@ export class Game {
     }
   }
 
+  stopParkingFinePaymentTicker() {
+    if (this.parkingFinePaymentTicker) {
+      clearInterval(this.parkingFinePaymentTicker);
+      this.parkingFinePaymentTicker = null;
+    }
+  }
+
+  stopDMVVisionTestTicker() {
+    if (this.dmvVisionTestTicker) {
+      clearInterval(this.dmvVisionTestTicker);
+      this.dmvVisionTestTicker = null;
+    }
+  }
+
+  startParkingFinePaymentTicker() {
+    this.stopParkingFinePaymentTicker();
+    this.parkingFinePaymentTicker = setInterval(() => {
+      if (this.state !== GamePhase.PARKING_FINE_PAYMENT || !this.gameState.parkingFinePayment) {
+        this.stopParkingFinePaymentTicker();
+        return;
+      }
+
+      const timerResult = advancePaymentTimer(this.gameState.parkingFinePayment);
+      this.gameState.parkingFinePayment = timerResult.session;
+
+      if (timerResult.impatienceTriggered) {
+        this.emit('event', {
+          type: 'finePaymentImpatience',
+          message: 'Customer is getting impatient. Finish payment soon.'
+        });
+      }
+
+      if (timerResult.autoSubmit) {
+        this.handleParkingFinePaymentAction('submit', { auto: true });
+        return;
+      }
+
+      this.emitParkingFinePaymentState();
+    }, 1000);
+  }
+
+  startDMVVisionTestTicker() {
+    this.stopDMVVisionTestTicker();
+    this.dmvVisionTestTicker = setInterval(() => {
+      if (this.state !== GamePhase.DMV_VISION_TEST || !this.gameState.dmvVisionTest) {
+        this.stopDMVVisionTestTicker();
+        return;
+      }
+
+      const timerResult = advanceVisionTestTimer(this.gameState.dmvVisionTest);
+      this.gameState.dmvVisionTest = timerResult.session;
+
+      if (timerResult.timerExpired) {
+        this.emit('event', {
+          type: 'visionTestTimerExpired',
+          message: 'Vision test timer expired. Issue a Pass or Fail verdict now.'
+        });
+      }
+
+      this.emitDMVVisionTestState();
+    }, 1000);
+  }
+
   startServiceTicker() {
     this.stopServiceTicker();
     this.serviceTicker = setInterval(() => {
@@ -1286,10 +1419,399 @@ export class Game {
         return;
       }
 
-      if (this.shiftManager.isShiftOver()) {
-        this.makeDecision('Escalate', 'SupervisorRequired', 'Shift ended while case was in progress.');
+      if (this.shiftManager.isShiftTimeOver()) {
+        if (!this.gameState.shiftOverGraceNotified) {
+          this.gameState.shiftOverGraceNotified = true;
+          this.emit('event', {
+            type: 'shiftOverGrace',
+            message: 'Shift time is over. Finish this customer to close out your day.'
+          });
+        }
       }
     }, 3000);
+  }
+
+  getCurrentOutstandingFineAmount() {
+    if (!this.currentNPC) return 0;
+
+    const unpaidFlag = (this.currentNPC.flags || []).find((flag) => flag?.flagId === 'UNPAID_TICKETS');
+    if (unpaidFlag?.data?.amountDue !== undefined && unpaidFlag?.data?.amountDue !== null) {
+      const amount = Number(unpaidFlag.data.amountDue);
+      if (Number.isFinite(amount) && amount > 0) return Math.round(amount);
+    }
+
+    const person = this.gameState?.agencyDatabase?.peopleByNpcId?.[this.currentNPC.npcId] || null;
+    const personFine = Number(person?.fines || 0);
+    return Number.isFinite(personFine) && personFine > 0 ? Math.round(personFine) : 0;
+  }
+
+  canStartParkingFinePaymentMiniGame() {
+    if (this.state !== GamePhase.SERVING || !this.currentCase || !this.currentNPC) return false;
+
+    const requestType = String(this.currentCase?.caseRecord?.requestType || '');
+    const hasOutstandingCondition = (this.currentCase?.caseRecord?.inputs?.conditions || [])
+      .some((condition) => condition?.type === 'unpaid_tickets');
+    const hasOutstandingFlag = this.currentNPC.hasFlag('UNPAID_TICKETS');
+    const hasOutstandingBalance = this.getCurrentOutstandingFineAmount() > 0;
+    const isParkingPaymentRequest = requestType === 'TicketPayment';
+
+    return hasOutstandingBalance && (isParkingPaymentRequest || hasOutstandingCondition || hasOutstandingFlag);
+  }
+
+  canDevStartParkingFinePaymentMiniGame() {
+    return this.state === GamePhase.SERVING && Boolean(this.currentCase) && Boolean(this.currentNPC);
+  }
+
+  canStartDMVVisionTestMiniGame() {
+    return this.state === GamePhase.SERVING && Boolean(this.currentCase) && Boolean(this.currentNPC);
+  }
+
+  canDevStartDMVVisionTestMiniGame() {
+    return this.canStartDMVVisionTestMiniGame();
+  }
+
+  getMiniGameLaunchers() {
+    const launchers = [
+      {
+        id: 'parking_fine_payment',
+        label: 'Parking Fine Payment',
+        canStart: this.canStartParkingFinePaymentMiniGame(),
+        canDevStart: this.canDevStartParkingFinePaymentMiniGame(),
+        unavailableMessage: 'No payable outstanding fine found for this case.'
+      },
+      {
+        id: 'dmv_vision_test',
+        label: 'DMV Vision Test',
+        canStart: this.canStartDMVVisionTestMiniGame(),
+        canDevStart: this.canDevStartDMVVisionTestMiniGame(),
+        unavailableMessage: 'Vision test is available only while serving an active customer.'
+      }
+    ];
+
+    return launchers.map((entry) => {
+      const isDevLaunch = this.developmentMode && entry.canDevStart;
+      const isLaunchable = entry.canStart || isDevLaunch;
+      return {
+        ...entry,
+        isDevLaunch,
+        isLaunchable
+      };
+    });
+  }
+
+  launchMiniGame(miniGameId, { forceDevelopmentLaunch = false } = {}) {
+    const id = String(miniGameId || '').trim().toLowerCase();
+
+    if (id === 'parking_fine_payment') {
+      return this.startParkingFinePaymentMiniGame({ forceDevelopmentLaunch });
+    }
+
+    if (id === 'dmv_vision_test') {
+      return this.startDMVVisionTestMiniGame({ forceDevelopmentLaunch });
+    }
+
+    return { ok: false, reason: 'unknown-mini-game', message: 'Unknown mini-game.' };
+  }
+
+  emitParkingFinePaymentState() {
+    if (!this.currentCase || !this.currentNPC || !this.gameState.parkingFinePayment) return;
+
+    this.emit('stateChange', {
+      state: GamePhase.PARKING_FINE_PAYMENT,
+      paymentState: this.gameState.parkingFinePayment,
+      queueStatus: this.shiftManager?.getQueueStatus?.() || null,
+      npc: {
+        ...this.currentNPC.toJSON(),
+        fullName: this.currentNPC.fullName,
+        age: this.currentNPC.identity.age
+      },
+      caseRecord: this.currentCase.caseRecord,
+      documents: this.currentCase.documents,
+      issues: this.currentCase.possibleIssues,
+      conditions: this.currentCase.caseRecord?.inputs?.conditions || []
+    });
+  }
+
+  emitDMVVisionTestState() {
+    if (!this.currentCase || !this.currentNPC || !this.gameState.dmvVisionTest) return;
+
+    this.emit('stateChange', {
+      state: GamePhase.DMV_VISION_TEST,
+      visionState: this.gameState.dmvVisionTest,
+      queueStatus: this.shiftManager?.getQueueStatus?.() || null,
+      npc: {
+        ...this.currentNPC.toJSON(),
+        fullName: this.currentNPC.fullName,
+        age: this.currentNPC.identity.age
+      },
+      caseRecord: this.currentCase.caseRecord,
+      documents: this.currentCase.documents,
+      issues: this.currentCase.possibleIssues,
+      conditions: this.currentCase.caseRecord?.inputs?.conditions || []
+    });
+  }
+
+  startDMVVisionTestMiniGame({ forceDevelopmentLaunch = false } = {}) {
+    const allowDevForceLaunch = Boolean(forceDevelopmentLaunch) && this.developmentMode && this.canDevStartDMVVisionTestMiniGame();
+    const canStartNormally = this.canStartDMVVisionTestMiniGame();
+
+    if (!canStartNormally && !allowDevForceLaunch) {
+      return { ok: false, reason: 'not-eligible' };
+    }
+
+    this.stopServiceTicker();
+
+    const seed = (this.currentNPC?.rng?.masterSeed || 1) + this.player.shiftNumber * 181;
+    const rng = this.getDeterministicRng(seed);
+
+    this.gameState.dmvVisionTest = buildDMVVisionTestSession({ rng });
+
+    this.state = GamePhase.DMV_VISION_TEST;
+    this.emitDMVVisionTestState();
+    this.startDMVVisionTestTicker();
+
+    return { ok: true };
+  }
+
+  startParkingFinePaymentMiniGame({ forceDevelopmentLaunch = false } = {}) {
+    const allowDevForceLaunch = Boolean(forceDevelopmentLaunch) && this.developmentMode && this.canDevStartParkingFinePaymentMiniGame();
+    const canStartNormally = this.canStartParkingFinePaymentMiniGame();
+
+    if (!canStartNormally && !allowDevForceLaunch) {
+      return { ok: false, reason: 'not-eligible' };
+    }
+
+    this.stopServiceTicker();
+
+    const currentOutstandingFine = this.getCurrentOutstandingFineAmount();
+    const fineAmount = currentOutstandingFine > 0 ? currentOutstandingFine : 75;
+    const seed = (this.currentNPC?.rng?.masterSeed || 1) + this.player.shiftNumber * 113 + (fineAmount || 0);
+    const rng = this.getDeterministicRng(seed);
+
+    this.gameState.parkingFinePayment = buildParkingFinePaymentSession({
+      rng,
+      fineAmount
+    });
+
+    this.state = GamePhase.PARKING_FINE_PAYMENT;
+    this.emitParkingFinePaymentState();
+    this.startParkingFinePaymentTicker();
+
+    return { ok: true };
+  }
+
+  clearOutstandingTicketsForCurrentNpc() {
+    if (!this.currentNPC?.npcId) return;
+    const npcId = this.currentNPC.npcId;
+
+    const clearForNpc = (npc) => {
+      if (!npc || npc.npcId !== npcId) return;
+      npc.clearFlag('UNPAID_TICKETS');
+    };
+
+    clearForNpc(this.currentNPC);
+    (this.npcPool || []).forEach(clearForNpc);
+    (this.shiftManager?.customerQueue || []).forEach(clearForNpc);
+
+    const person = this.gameState?.agencyDatabase?.peopleByNpcId?.[npcId] || null;
+    if (person) {
+      person.tickets = 0;
+      person.fines = 0;
+    }
+  }
+
+  refreshCurrentCaseAfterFinePayment() {
+    if (!this.currentCase || !this.currentNPC) return;
+
+    const priorConditions = Array.isArray(this.currentCase?.caseRecord?.inputs?.conditions)
+      ? this.currentCase.caseRecord.inputs.conditions
+      : [];
+    const nextConditions = priorConditions.filter((condition) => condition?.type !== 'unpaid_tickets');
+    this.currentCase.caseRecord.inputs.conditions = nextConditions;
+
+    this.currentCase.correctAction = this.caseGenerator.determineCorrectAction(
+      this.currentCase.documents,
+      this.currentNPC,
+      nextConditions,
+      this.currentCase.caseRecord.requestType
+    );
+    this.currentCase.possibleIssues = this.caseGenerator.identifyIssues(
+      this.currentCase.documents,
+      this.currentNPC,
+      nextConditions,
+      this.currentCase.caseRecord.requestType
+    );
+  }
+
+  returnToServingAfterFinePayment(message = '') {
+    this.stopParkingFinePaymentTicker();
+    this.gameState.parkingFinePayment = null;
+
+    this.state = GamePhase.SERVING;
+    const archetype = this.getArchetype(this.currentNPC);
+    this.emit('stateChange', {
+      state: this.state,
+      npc: {
+        ...this.currentNPC.toJSON(),
+        fullName: this.currentNPC.fullName,
+        age: this.currentNPC.identity.age
+      },
+      caseRecord: this.currentCase.caseRecord,
+      documents: this.currentCase.documents,
+      issues: this.currentCase.possibleIssues,
+      greeting: message || this.currentNPC?.dialogue?.smallTalk || 'Payment handled. What would you like to do next?',
+      queueStatus: this.shiftManager.getQueueStatus(),
+      waitRemaining: this.gameState.caseWaitRemaining,
+      waitTotal: this.gameState.caseWaitTotal,
+      activeEffects: this.shiftManager.getActiveEffects(),
+      activeChaosEvents: this.shiftManager.getActiveChaosEvents(),
+      difficultyBehavior: this.getCurrentDifficultyBehavior(),
+      morale: this.getMoraleSnapshot(),
+      archetype: archetype ? { id: archetype.id, name: archetype.name } : null,
+      conditions: this.currentCase.caseRecord.inputs.conditions
+    });
+    this.startServiceTicker();
+  }
+
+  returnToServingAfterVisionTest(message = '') {
+    this.stopDMVVisionTestTicker();
+    this.gameState.dmvVisionTest = null;
+
+    this.state = GamePhase.SERVING;
+    const archetype = this.getArchetype(this.currentNPC);
+    this.emit('stateChange', {
+      state: this.state,
+      npc: {
+        ...this.currentNPC.toJSON(),
+        fullName: this.currentNPC.fullName,
+        age: this.currentNPC.identity.age
+      },
+      caseRecord: this.currentCase.caseRecord,
+      documents: this.currentCase.documents,
+      issues: this.currentCase.possibleIssues,
+      greeting: message || this.currentNPC?.dialogue?.smallTalk || 'Vision screening complete. Continue processing this case.',
+      queueStatus: this.shiftManager.getQueueStatus(),
+      waitRemaining: this.gameState.caseWaitRemaining,
+      waitTotal: this.gameState.caseWaitTotal,
+      activeEffects: this.shiftManager.getActiveEffects(),
+      activeChaosEvents: this.shiftManager.getActiveChaosEvents(),
+      difficultyBehavior: this.getCurrentDifficultyBehavior(),
+      morale: this.getMoraleSnapshot(),
+      archetype: archetype ? { id: archetype.id, name: archetype.name } : null,
+      conditions: this.currentCase.caseRecord.inputs.conditions
+    });
+    this.startServiceTicker();
+  }
+
+  handleParkingFinePaymentAction(action, payload = {}) {
+    const session = this.gameState.parkingFinePayment;
+    if (this.state !== GamePhase.PARKING_FINE_PAYMENT || !session) {
+      return { ok: false, reason: 'not-active' };
+    }
+
+    let result = null;
+    if (action === 'pick_bill') {
+      const source = String(payload.source || '');
+      const billIndex = Number(payload.billIndex);
+      result = source === 'drawer'
+        ? clickDrawerBill(session, billIndex)
+        : clickCitizenBill(session, billIndex);
+    } else if (action === 'submit') {
+      result = submitPayment(session, { auto: Boolean(payload.auto) });
+    } else {
+      return { ok: false, reason: 'unsupported-action' };
+    }
+
+    this.gameState.parkingFinePayment = result.session;
+
+    if (result.outcome === 'success') {
+      this.clearOutstandingTicketsForCurrentNpc();
+      this.refreshCurrentCaseAfterFinePayment();
+      this.logEvent('FINE_PAYMENT_COMPLETED', {
+        caseId: this.currentCase?.caseRecord?.caseId || null,
+        npcId: this.currentNPC?.npcId || null,
+        fineAmount: this.gameState.parkingFinePayment?.fineAmount || 0,
+        collected: this.gameState.parkingFinePayment?.amountCollected || 0
+      });
+      this.emit('event', { type: 'receiptPrinter' });
+      this.returnToServingAfterFinePayment('Payment complete. Receipt printed.');
+      return { ok: true, outcome: 'success' };
+    }
+
+    if (result.outcome === 'underpay' || result.outcome === 'bad_change') {
+      this.player.recordComplaint();
+      this.currentNPC?.updateReputation?.({ towardPlayer: -6, towardAgency: -2 });
+      this.logEvent('FINE_PAYMENT_FAILED', {
+        caseId: this.currentCase?.caseRecord?.caseId || null,
+        npcId: this.currentNPC?.npcId || null,
+        outcome: result.outcome,
+        collected: this.gameState.parkingFinePayment?.amountCollected || 0,
+        fineAmount: this.gameState.parkingFinePayment?.fineAmount || 0
+      });
+      this.returnToServingAfterFinePayment('Payment failed. Customer filed a complaint.');
+      return { ok: true, outcome: result.outcome };
+    }
+
+    this.emitParkingFinePaymentState();
+    return { ok: true, outcome: result.outcome || 'in_progress' };
+  }
+
+  handleDMVVisionTestAction(action, payload = {}) {
+    const session = this.gameState.dmvVisionTest;
+    if (this.state !== GamePhase.DMV_VISION_TEST || !session) {
+      return { ok: false, reason: 'not-active' };
+    }
+
+    let result = null;
+    if (action === 'next_line') {
+      result = revealNextVisionLine(session);
+    } else if (action === 'verdict') {
+      result = issueVisionVerdict(session, payload.verdict);
+    } else {
+      return { ok: false, reason: 'unsupported-action' };
+    }
+
+    this.gameState.dmvVisionTest = result.session;
+
+    if (result.outcome === 'success') {
+      this.logEvent('VISION_TEST_RESOLVED', {
+        caseId: this.currentCase?.caseRecord?.caseId || null,
+        npcId: this.currentNPC?.npcId || null,
+        correct: true,
+        severity: 'none',
+        verdict: this.gameState.dmvVisionTest?.verdict || null
+      });
+      this.returnToServingAfterVisionTest('Correct vision ruling recorded. Case processing resumed.');
+      return { ok: true, outcome: 'success' };
+    }
+
+    if (result.outcome === 'wrong_verdict') {
+      this.player.recordComplaint();
+      if (result.severity === 'critical') {
+        this.player.performance.currentShift.policyErrors.major++;
+        this.currentNPC?.updateReputation?.({ towardPlayer: -8, towardAgency: -4 });
+      } else {
+        this.player.performance.currentShift.policyErrors.minor++;
+        this.currentNPC?.updateReputation?.({ towardPlayer: -3, towardAgency: -1 });
+      }
+
+      this.logEvent('VISION_TEST_RESOLVED', {
+        caseId: this.currentCase?.caseRecord?.caseId || null,
+        npcId: this.currentNPC?.npcId || null,
+        correct: false,
+        severity: result.severity || 'minor',
+        verdict: this.gameState.dmvVisionTest?.verdict || null
+      });
+
+      const message = result.severity === 'critical'
+        ? 'Critical vision-test mistake recorded. Compliance review risk increased.'
+        : 'Vision-test mismatch recorded. Customer filed a minor complaint.';
+      this.returnToServingAfterVisionTest(message);
+      return { ok: true, outcome: 'wrong_verdict', severity: result.severity || 'minor' };
+    }
+
+    this.emitDMVVisionTestState();
+    return { ok: true, outcome: result.outcome || 'in_progress' };
   }
 
   rollDocumentRequestResponse(npc, rng, isRequiredDoc) {
@@ -1364,6 +1886,28 @@ export class Game {
     };
   }
 
+  buildCorrectFormReturnCase(caseData, npc) {
+    const updatedDocuments = { ...(caseData?.documents || {}) };
+    const updatedCaseRecord = JSON.parse(JSON.stringify(caseData.caseRecord));
+    const existingConditions = Array.isArray(updatedCaseRecord?.inputs?.conditions)
+      ? [...updatedCaseRecord.inputs.conditions]
+      : [];
+    const wrongFormCondition = existingConditions.find((condition) => condition?.type === 'wrong_form') || null;
+    const updatedConditions = existingConditions.filter((condition) => condition?.type !== 'wrong_form');
+
+    updatedCaseRecord.inputs.conditions = updatedConditions;
+
+    return {
+      caseRecord: updatedCaseRecord,
+      documents: updatedDocuments,
+      correctAction: this.caseGenerator.determineCorrectAction(updatedDocuments, npc, updatedConditions, updatedCaseRecord.requestType),
+      possibleIssues: this.caseGenerator.identifyIssues(updatedDocuments, npc, updatedConditions, updatedCaseRecord.requestType),
+      returnedWithCorrectForm: true,
+      correctedFromFormType: wrongFormCondition?.submittedForm || null,
+      formCorrectionApplied: true
+    };
+  }
+
   beginDocumentReturnFlow({ docType, isRequiredDoc, frustrationPenalty = 0 }) {
     const rng = this.getDeterministicRng(this.currentNPC.rng.masterSeed + this.player.shiftNumber * 17);
     const queuedCase = this.buildDocumentReturnCase(this.currentCase, this.currentNPC, docType, rng);
@@ -1390,6 +1934,81 @@ export class Game {
     this.currentNPC = null;
     this.gameState.pendingDocRequest = null;
     this.nextCustomer();
+    return { ok: true, outcome: 'return_queue' };
+  }
+
+  beginCorrectFormReturnFlow({ frustrationPenalty = 0 }) {
+    const queuedCase = this.buildCorrectFormReturnCase(this.currentCase, this.currentNPC);
+    queuedCase.requestFrustrationPenalty = Math.max(0, Number(frustrationPenalty || 0));
+
+    const ticketSeed = `${Date.now().toString(36)}_${this.shiftManager.currentCustomerIndex.toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
+    const returnTicket = `ret_${ticketSeed}`;
+    this.currentNPC.metadata = this.currentNPC.metadata || {};
+    this.currentNPC.metadata.pendingReturnTicket = returnTicket;
+    this.gameState.pendingDocumentReturns[returnTicket] = queuedCase;
+
+    this.shiftManager.sendCustomerToBack(this.currentNPC);
+    this.logEvent('DOC_REQUESTED', {
+      caseId: this.currentCase.caseRecord.caseId,
+      npcId: this.currentNPC.npcId,
+      docType: 'correct_form',
+      outcome: 'return_queue',
+      required: true,
+      requestKind: 'form_correction',
+      frustrationPenalty: queuedCase.requestFrustrationPenalty
+    });
+
+    this.currentCase = null;
+    this.currentNPC = null;
+    this.gameState.pendingDocRequest = null;
+    this.nextCustomer();
+    return { ok: true, outcome: 'return_queue' };
+  }
+
+  requestCorrectForm() {
+    if (this.state !== GamePhase.SERVING || !this.currentCase || !this.currentNPC) {
+      return { ok: false, reason: 'no-active-case' };
+    }
+
+    const wrongFormCondition = this.currentCase?.caseRecord?.inputs?.conditions?.find((condition) => condition?.type === 'wrong_form') || null;
+    if (!wrongFormCondition) {
+      return { ok: false, reason: 'no-wrong-form-condition' };
+    }
+
+    const expectedFormLabel = this.caseGenerator.formatRequestType(this.currentCase.caseRecord.requestType);
+    const submittedFormLabel = this.caseGenerator.formatRequestType(wrongFormCondition.submittedForm || this.currentCase.caseRecord.requestType);
+
+    this.stopServiceTicker();
+    this.gameState.pendingDocRequest = {
+      docType: 'correct_form',
+      docName: 'New DMV Form',
+      isRequiredDoc: true,
+      outcome: 'return_queue',
+      frustrationPenalty: 6,
+      requestKind: 'form_correction',
+      submittedForm: wrongFormCondition.submittedForm || null,
+      expectedForm: this.currentCase.caseRecord.requestType,
+      npcId: this.currentNPC.npcId,
+      npcName: this.currentNPC.fullName,
+      caseId: this.currentCase.caseRecord.caseId,
+      note: `Submitted ${submittedFormLabel}; requesting ${expectedFormLabel}.`
+    };
+
+    this.state = GamePhase.DOC_REQUEST;
+    this.emit('stateChange', {
+      state: 'doc_request',
+      requestDecision: { ...this.gameState.pendingDocRequest },
+      queueStatus: this.shiftManager.getQueueStatus(),
+      npc: {
+        ...this.currentNPC.toJSON(),
+        fullName: this.currentNPC.fullName,
+        age: this.currentNPC.identity.age
+      },
+      caseRecord: this.currentCase.caseRecord,
+      documents: this.currentCase.documents,
+      issues: this.currentCase.possibleIssues
+    });
+
     return { ok: true, outcome: 'return_queue' };
   }
 
@@ -1473,6 +2092,11 @@ export class Game {
 
     if (outcome === 'return_queue') {
       if (action !== 'send_to_back') return { ok: false, reason: 'invalid-action' };
+      if (pending.requestKind === 'form_correction') {
+        return this.beginCorrectFormReturnFlow({
+          frustrationPenalty: pending.frustrationPenalty
+        });
+      }
       return this.beginDocumentReturnFlow({
         docType,
         isRequiredDoc,
@@ -1649,21 +2273,63 @@ export class Game {
   getAllowedRequestTypesForDepartment(departmentId) {
     const snapshot = this.getCareerProgressionSnapshot();
     if (departmentId === snapshot.gameplayDepartment && Array.isArray(snapshot.requestTypes) && snapshot.requestTypes.length) {
-      return [...snapshot.requestTypes];
+      const { minDocs } = this.getRequiredDocsRangeForDepartment(departmentId);
+      if (minDocs <= 0) return [...snapshot.requestTypes];
+
+      const deptConfigForRank = this.catalogs?.departments?.[departmentId];
+      return snapshot.requestTypes.filter((requestType) => {
+        const docs = deptConfigForRank?.requiredDocsByRequest?.[requestType];
+        return Array.isArray(docs) && docs.length >= minDocs;
+      });
     }
 
     const deptConfig = this.catalogs?.departments?.[departmentId];
     if (!deptConfig) return [];
 
-    const requestTypes = Array.isArray(deptConfig.requestTypes) ? [...deptConfig.requestTypes] : [];
-    if (departmentId !== 'DMV') return requestTypes;
-
-    const parkingDutyRequests = ['TicketPayment', 'TicketAppeal', 'PermitApplication', 'PermitRenewal'];
-    if (this.isDmvParkingDutiesUnlocked()) {
+    let requestTypes = Array.isArray(deptConfig.requestTypes) ? [...deptConfig.requestTypes] : [];
+    if (departmentId !== 'DMV') {
+      const { minDocs } = this.getRequiredDocsRangeForDepartment(departmentId);
+      if (minDocs > 0) {
+        requestTypes = requestTypes.filter((requestType) => {
+          const docs = deptConfig.requiredDocsByRequest?.[requestType];
+          return Array.isArray(docs) && docs.length >= minDocs;
+        });
+      }
       return requestTypes;
     }
 
-    return requestTypes.filter((requestType) => !parkingDutyRequests.includes(requestType));
+    const parkingDutyRequests = ['TicketPayment', 'TicketAppeal', 'PermitApplication', 'PermitRenewal'];
+    if (!this.isDmvParkingDutiesUnlocked()) {
+      requestTypes = requestTypes.filter((requestType) => !parkingDutyRequests.includes(requestType));
+    }
+
+    const { minDocs } = this.getRequiredDocsRangeForDepartment(departmentId);
+    if (minDocs > 0) {
+      requestTypes = requestTypes.filter((requestType) => {
+        const docs = deptConfig.requiredDocsByRequest?.[requestType];
+        return Array.isArray(docs) && docs.length >= minDocs;
+      });
+    }
+
+    return requestTypes;
+  }
+
+  getRequiredDocsRangeForDepartment(departmentId) {
+    const snapshot = this.getCareerProgressionSnapshot();
+    if (departmentId !== snapshot.gameplayDepartment) {
+      return { minDocs: 0, maxDocs: 0 };
+    }
+
+    const level = Math.max(1, Number(snapshot.rankIndex) + 1 || 1);
+    if (level === 1) {
+      return { minDocs: 2, maxDocs: 2 };
+    }
+    if (level === 2) {
+      const maxDocs = this.runRng?.nextInt(2, 3) ?? (Math.random() < 0.5 ? 2 : 3);
+      return { minDocs: 2, maxDocs };
+    }
+
+    return { minDocs: 2, maxDocs: 0 };
   }
 
   getCustomerRangeForProgression() {
@@ -1676,6 +2342,10 @@ export class Game {
     }
 
     return { min: 6, max: 8 };
+  }
+
+  getRequiredDocsCapForDepartment(departmentId) {
+    return this.getRequiredDocsRangeForDepartment(departmentId).maxDocs;
   }
 
   buildCaseOutcomes(caseRecord, playerDecision, evaluation, correctAction) {
@@ -1851,7 +2521,7 @@ export class Game {
     };
   }
 
-  skipToShiftEndSimulated() {
+  skipToShiftEndSimulated(options = {}) {
     if (!this.gameState.developmentMode) {
       return { ok: false, message: 'Developer mode is required.' };
     }
@@ -1870,6 +2540,12 @@ export class Game {
     }
 
     this.stopServiceTicker();
+
+    const forcedGrade = this.normalizePerformanceGrade(options?.forcedGrade);
+    if (options?.forcedGrade && !forcedGrade) {
+      return { ok: false, message: 'Invalid grade. Use one of: S, A, B, C, D, F.' };
+    }
+    const forcedScore = forcedGrade ? this.getForcedScoreForGrade(forcedGrade) : null;
 
     const isActiveCaseUnresolved = [GamePhase.SERVING, GamePhase.DOC_REQUEST, GamePhase.BRIBE].includes(this.state);
     const queueStatus = this.shiftManager.getQueueStatus();
@@ -1939,11 +2615,13 @@ export class Game {
       pendingCasesSimulated: pendingCases
     });
 
-    this.endShift();
+    this.endShift({ forcedGrade, forcedScore });
+    const gradeMessage = forcedGrade ? ` Forced grade: ${forcedGrade}.` : '';
     return {
       ok: true,
-      message: `Shift ${this.player.shiftNumber} ended via simulation (${pendingCases} case${pendingCases === 1 ? '' : 's'} fast-forwarded).`,
-      pendingCasesSimulated: pendingCases
+      message: `Shift ${this.player.shiftNumber} ended via simulation (${pendingCases} case${pendingCases === 1 ? '' : 's'} fast-forwarded).${gradeMessage}`,
+      pendingCasesSimulated: pendingCases,
+      forcedGrade: forcedGrade || null
     };
   }
 
@@ -2346,6 +3024,8 @@ export class Game {
     }
 
     this.stopServiceTicker();
+    this.stopParkingFinePaymentTicker();
+    this.gameState.parkingFinePayment = null;
     this.decrementNpcCooldowns();
     this.initializeProgressionState();
     this.player.startNewShift();
@@ -2441,6 +3121,7 @@ export class Game {
     this.gameState.caseWaitTotal = Math.max(12, basePatienceWindow - frustrationPenalty);
     this.gameState.caseWaitRemaining = this.gameState.caseWaitTotal;
     this.gameState.casePatienceEscalated = false;
+    this.gameState.shiftOverGraceNotified = false;
 
     // Check for chaos events
     const events = this.shiftManager.checkForEvent(this.shiftManager.currentCustomerIndex);
@@ -2455,7 +3136,8 @@ export class Game {
       this.player.shiftNumber,
       this.getDifficultyProfile(),
       {
-        allowedRequestTypes: this.getAllowedRequestTypesForDepartment(this.player.department)
+        allowedRequestTypes: this.getAllowedRequestTypesForDepartment(this.player.department),
+        maxRequiredDocs: this.getRequiredDocsCapForDepartment(this.player.department)
       }
     );
 
@@ -2484,6 +3166,14 @@ export class Game {
     if (resumedCase?.returnedWithRequestedDoc && resumedCase.requestedDocType) {
       const requestedDocName = this.caseGenerator.formatDocName(resumedCase.requestedDocType);
       greeting = `I'm back from the records line with the ${requestedDocName}.`;
+      if (frustrationPenalty >= 18) {
+        greeting += ' This already took too long.';
+      }
+    }
+
+    if (resumedCase?.returnedWithCorrectForm) {
+      const requestLabel = this.caseGenerator.formatRequestType(caseData.caseRecord.requestType);
+      greeting = `I filled out the ${requestLabel} form this time. Thanks for helping me get the right one.`;
       if (frustrationPenalty >= 18) {
         greeting += ' This already took too long.';
       }
@@ -2565,11 +3255,18 @@ export class Game {
 
     const deltas = Object.fromEntries(keys.map((key) => [key, (after[key] || 0) - (before[key] || 0)]));
 
+    const selectedReasons = Array.isArray(playerDecision?.reasonCodes) && playerDecision.reasonCodes.length
+      ? playerDecision.reasonCodes.join(', ')
+      : (playerDecision?.reasonCode || 'N/A');
+    const expectedReasons = Array.isArray(correctAction?.applicableReasonCodes) && correctAction.applicableReasonCodes.length
+      ? correctAction.applicableReasonCodes.join(', ')
+      : (correctAction?.reasonCode || 'N/A');
+
     return {
       selectedAction: playerDecision?.action || 'Unknown',
-      selectedReason: playerDecision?.reasonCode || 'N/A',
+      selectedReason: selectedReasons,
       expectedAction: correctAction?.action || 'N/A',
-      expectedReason: correctAction?.reasonCode || 'N/A',
+      expectedReason: expectedReasons,
       deltas,
       before,
       after
@@ -2577,7 +3274,7 @@ export class Game {
   }
 
   // Player makes a decision
-  makeDecision(action, reasonCode = null, notes = '', preScenarioSnapshot = null) {
+  makeDecision(action, reasonCode = null, notes = '', preScenarioSnapshot = null, options = {}) {
     if (!this.currentCase || !this.currentNPC) return;
     this.stopServiceTicker();
 
@@ -2585,14 +3282,24 @@ export class Game {
     const caseFee = Math.max(0, Number(this.currentCase?.caseRecord?.inputs?.fee || 0));
 
     const processingTime = (Date.now() - this.caseStartTime) / 1000;
-    const playerDecision = { action, reasonCode: reasonCode || 'AllDocumentsValid', notes };
+    const selectedReasonCodes = Array.isArray(options?.reasonCodes)
+      ? [...new Set(options.reasonCodes.map((code) => String(code || '').trim()).filter(Boolean))]
+      : [];
+    const normalizedReasonCode = String(reasonCode || 'AllDocumentsValid').trim() || 'AllDocumentsValid';
+    const playerDecision = {
+      action,
+      reasonCode: normalizedReasonCode,
+      reasonCodes: selectedReasonCodes.length ? selectedReasonCodes : [normalizedReasonCode],
+      notes
+    };
     const correctAction = this.currentCase.correctAction;
 
     // Evaluate the decision
     const evaluation = this.supervisor.evaluateCase(
       this.currentCase.caseRecord,
       playerDecision,
-      correctAction
+      correctAction,
+      { difficultyId: this.getDifficultyProfile().id }
     );
 
     const creditedFee = action === 'Approve' && evaluation.correct ? caseFee : 0;
@@ -2604,6 +3311,7 @@ export class Game {
     this.currentCase.caseRecord.decision = {
       action: playerDecision.action,
       reasonCode: playerDecision.reasonCode,
+      reasonCodes: [...playerDecision.reasonCodes],
       feeDelta: creditedFee,
       notes
     };
@@ -2623,6 +3331,7 @@ export class Game {
 
     // Update player performance
     this.player.recordCase({
+      caseId: this.currentCase?.caseRecord?.caseId,
       processingTime,
       sentiment: evaluation.sentiment,
       correct: evaluation.correct
@@ -2805,12 +3514,24 @@ export class Game {
   }
 
   // End the shift
-  endShift() {
+  endShift(options = {}) {
     this.stopServiceTicker();
-    const shiftResult = this.player.endShift(this.balancing);
+    this.stopParkingFinePaymentTicker();
+    const hasForcedScoreOption = options?.forcedScore !== null && options?.forcedScore !== undefined;
+    const forcedScore = hasForcedScoreOption ? Number(options.forcedScore) : NaN;
+    const hasForcedScore = Number.isFinite(forcedScore);
+    const normalizedForcedGrade = this.normalizePerformanceGrade(options?.forcedGrade);
+    const shiftResult = this.player.endShift(this.balancing, {
+      forcedScore: hasForcedScore ? forcedScore : null
+    });
     const progressionResult = this.resolveCareerProgressionAfterShift(shiftResult);
     const departmentProgress = this.updateDepartmentUnlocks();
-    const review = this.supervisor.generateShiftReview(this.player);
+    const review = this.supervisor.generateShiftReview(this.player, {
+      forcedScore: shiftResult.score
+    });
+    if (normalizedForcedGrade) {
+      review.grade = normalizedForcedGrade;
+    }
     const shiftSummary = this.shiftManager.getShiftSummary();
     const newAchievements = this.player.checkAchievements();
     const complianceReport = this.runAuditAndAppeals();
@@ -2981,6 +3702,7 @@ export class Game {
       this.gameState.shiftStaffingCut = Boolean(save.gameState.shiftStaffingCut);
       this.gameState.morale = Number.isFinite(Number(save.gameState.morale)) ? Number(save.gameState.morale) : 100;
       this.gameState.resignationTriggered = Boolean(save.gameState.resignationTriggered);
+      this.gameState.parkingFinePayment = null;
       this.gameState.settings = save.gameState.settings || this.getDefaultSettings();
       this.gameState.lastPlayedAt = save.gameState.lastPlayedAt || null;
     }
@@ -3066,6 +3788,7 @@ export class Game {
 
   resetCareerState({ careerName = 'New Clerk', difficulty = 'easy' } = {}) {
     this.stopServiceTicker();
+    this.stopParkingFinePaymentTicker();
     this.player = new PlayerState();
     this.player.name = String(careerName || 'New Clerk').trim() || 'New Clerk';
     this.npcPool = [];
@@ -3089,6 +3812,7 @@ export class Game {
     this.gameState.shiftStaffingCut = false;
     this.gameState.morale = 100;
     this.gameState.resignationTriggered = false;
+    this.gameState.parkingFinePayment = null;
     this.gameState.settings = this.getDefaultSettings();
     this.player.progressionState = createInitialProgressionState(this.gameState.seed);
     this.syncPlayerCareerFromProgression();
@@ -3107,12 +3831,11 @@ export class Game {
   }
 
   newGame() {
-    // Backward-compatible default behavior: replace slot 1 and start at menu.
+    // Backward-compatible default behavior: replace slot 1 and start immediately.
     this.activeSaveSlot = 1;
     this.resetCareerState({ careerName: 'New Clerk', difficulty: 'easy' });
     this.saveGame({ force: true, slotIndex: 1 });
-    this.state = GamePhase.MENU;
-    this.emit('stateChange', { state: this.state });
+    this.startShift();
   }
 
   getGameState() {

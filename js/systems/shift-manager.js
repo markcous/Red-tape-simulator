@@ -135,6 +135,10 @@ export class ShiftManager {
       this.inGameTime >= this.shiftEnd;
   }
 
+  isShiftTimeOver() {
+    return this.inGameTime >= this.shiftEnd;
+  }
+
   rollForEvents() {
     const events = this.dialogueData.chaosEvents;
     // 30% chance of an event per shift

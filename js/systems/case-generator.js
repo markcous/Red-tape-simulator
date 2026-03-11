@@ -17,14 +17,15 @@ export class CaseGenerator {
     // Determine request type
     const requestType = this.pickRequestType(rng, archetype, deptConfig, allowedRequestTypes);
     const configuredRequiredDocs = deptConfig.requiredDocsByRequest[requestType] || [];
-    const requiredDocs = this.getRequiredDocsForRequest(requestType, configuredRequiredDocs, npc);
+    const requiredDocs = this.getRequiredDocsForRequest(requestType, configuredRequiredDocs, npc, options);
     const fee = deptConfig.fees[requestType] || 0;
 
     // Generate the documents the NPC brings (some may be missing or forged)
     const documents = this.generateDocuments(rng, npc, archetype, requestType, requiredDocs, difficultyProfile);
 
     // Generate any special conditions
-    const conditions = this.generateConditions(rng, npc, archetype, requestType, deptConfig, difficultyProfile);
+    let conditions = this.generateConditions(rng, npc, archetype, requestType, deptConfig, difficultyProfile);
+    conditions = this.reconcileInsuranceLapseCondition(conditions, documents, shiftNumber);
 
     const caseRecord = new CaseRecord({
       npcId: npc.npcId,
@@ -48,17 +49,24 @@ export class CaseGenerator {
     };
   }
 
-  getRequiredDocsForRequest(requestType, configuredRequiredDocs, npc) {
+  getRequiredDocsForRequest(requestType, configuredRequiredDocs, npc, options = {}) {
     const required = Array.isArray(configuredRequiredDocs)
       ? [...configuredRequiredDocs]
       : [];
 
     // Adults applying for a new license should not need parental consent.
+    let normalizedRequired = required;
     if (requestType === 'NewLicense' && Number(npc?.identity?.age || 0) >= 18) {
-      return required.filter((docType) => docType !== 'parentalConsent');
+      normalizedRequired = required.filter((docType) => docType !== 'parentalConsent');
     }
 
-    return required;
+    const maxRequiredDocs = Number(options?.maxRequiredDocs || 0);
+    if (maxRequiredDocs > 0 && normalizedRequired.length > maxRequiredDocs) {
+      // Preserve a stable doc order so onboarding caps remain predictable to the player.
+      return normalizedRequired.slice(0, Math.max(1, Math.floor(maxRequiredDocs)));
+    }
+
+    return normalizedRequired;
   }
 
   pickRequestType(rng, archetype, deptConfig, allowedRequestTypes = null) {
@@ -110,8 +118,8 @@ export class CaseGenerator {
       // Fill in document data
       doc.data = this.generateDocumentData(rng, npc, docType, requestType, requestContext);
 
-      // Check if document is expired (some document types never expire)
-      if (this.isNonExpiringDocument(docType)) {
+      // Check if document is expired (some document types never expire, while proof of residence is recency-based)
+      if (this.isNonExpiringDocument(docType) || docType === 'proofOfResidence') {
         doc.expired = false;
       } else if (rng.chance(0.15)) {
         doc.expired = true;
@@ -141,7 +149,30 @@ export class CaseGenerator {
       documents[docType] = doc;
     }
 
+    this.alignTransferDocumentTimeline(documents, rng);
+
     return documents;
+  }
+
+  alignTransferDocumentTimeline(documents, rng) {
+    const billDoc = documents?.billOfSale;
+    const odoDoc = documents?.odometerDisclosure;
+    const titleDoc = documents?.titleDocument;
+
+    const billPresent = billDoc?.present && !billDoc?.forged;
+    const odoPresent = odoDoc?.present && !odoDoc?.forged;
+    const titlePresent = titleDoc?.present && !titleDoc?.forged;
+
+    const saleDate = String(billDoc?.data?.saleDate || '').trim();
+    if (billPresent && odoPresent && saleDate) {
+      // Odometer disclosure should occur at transfer time.
+      odoDoc.data.disclosureDate = saleDate;
+    }
+
+    if (billPresent && titlePresent && saleDate) {
+      const issuedAt = this.addDaysToDate(saleDate, rng.nextInt(0, 14));
+      titleDoc.data.dateIssued = issuedAt || saleDate;
+    }
   }
 
   buildRequestContext(rng, npc, requestType) {
@@ -203,7 +234,7 @@ export class CaseGenerator {
             eyeColor,
             hairColor,
             organDonor: donorLabel,
-            ssn: npc?.identity?.ssn || npc?.identity?.ssnMasked || 'XXX-XX-X0000',
+            ssn: npc?.identity?.ssn || npc?.identity?.ssnMasked || 'XXX-XX-X000',
             ertc: `${rng.pick(['E0', 'E1', 'E2'])}${rng.nextInt(10, 99)}-${rng.pick(['R0', 'R1', 'R2'])}${rng.nextInt(10, 99)}-${rng.pick(['T0', 'T1', 'T2'])}${rng.nextInt(10, 99)}`
           };
         }
@@ -304,6 +335,7 @@ export class CaseGenerator {
       'photo_mismatch',
       'altered_date',
       'wrong_address',
+      'physical_mismatch',
       'suspicious_seal',
       'ink_inconsistency',
       'wrong_font'
@@ -317,11 +349,35 @@ export class CaseGenerator {
 
         // Apply the forgery to the data
         if (error === 'name_mismatch') {
-          doc.data.holderName = `${rng.pick(this.catalogs.names.first)} ${npc.identity.lastName}`;
+          const sourceName = String(doc?.data?.holderName || `${npc?.identity?.firstName || ''} ${npc?.identity?.lastName || ''}`).trim();
+          const sourceTokens = sourceName.split(/\s+/).filter(Boolean);
+          const sourceFirst = sourceTokens[0] || String(npc?.identity?.firstName || '').trim();
+
+          const firstNames = Array.isArray(this.catalogs?.names?.first) ? this.catalogs.names.first : [];
+          const lastNames = Array.isArray(this.catalogs?.names?.last) ? this.catalogs.names.last : [];
+
+          const firstCandidates = firstNames.filter((name) => name && name !== sourceFirst);
+          const lastCandidates = lastNames.filter((name) => name && name !== npc?.identity?.lastName);
+
+          const forgedFirst = firstCandidates.length ? rng.pick(firstCandidates) : `${sourceFirst || 'Applicant'} X`;
+          let forgedLast = String(npc?.identity?.lastName || '').trim();
+          let forgedName = `${forgedFirst} ${forgedLast}`.trim();
+
+          if (forgedName.toLowerCase() === sourceName.toLowerCase() && lastCandidates.length) {
+            forgedLast = rng.pick(lastCandidates);
+            forgedName = `${forgedFirst} ${forgedLast}`.trim();
+          }
+
+          doc.data.holderName = forgedName;
         } else if (error === 'photo_mismatch') {
           doc.data.licensePhotoId = this.pickDifferentPhotoId(rng, npc?.appearance?.photoId);
         } else if (error === 'wrong_address') {
           doc.data.address = rng.pick(this.catalogs.addresses);
+        } else if (error === 'physical_mismatch') {
+          const baseHair = String(doc?.data?.hairColor || npc?.identity?.hairColor || npc?.appearance?.hair?.color || 'Brown');
+          const hairChoices = ['Black', 'Brown', 'Blonde', 'Gray', 'Red', 'White']
+            .filter((value) => value.toLowerCase() !== baseHair.toLowerCase());
+          doc.data.hairColor = hairChoices.length ? rng.pick(hairChoices) : `${baseHair}*`;
         } else if (error === 'altered_date') {
           doc.data.dateIssued = this.generatePastDate(rng, 5, 10);
         }
@@ -429,6 +485,15 @@ export class CaseGenerator {
     return parsed.toISOString().slice(0, 10);
   }
 
+  addDaysToDate(isoDate, daysToAdd) {
+    const parsed = new Date(isoDate);
+    if (Number.isNaN(parsed.getTime())) {
+      return isoDate;
+    }
+    parsed.setDate(parsed.getDate() + Number(daysToAdd || 0));
+    return parsed.toISOString().slice(0, 10);
+  }
+
   pickDifferentPhotoId(rng, currentPhotoId) {
     const photos = Array.isArray(this.photoLibrary?.photos) ? this.photoLibrary.photos : [];
     const ids = photos.map(entry => entry?.id).filter(Boolean);
@@ -453,6 +518,9 @@ export class CaseGenerator {
   generateConditions(rng, npc, archetype, requestType, deptConfig, difficultyProfile = {}) {
     const conditions = [];
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const configuredRequiredDocs = deptConfig?.requiredDocsByRequest?.[requestType] || [];
+    const requiredDocsForRequest = this.getRequiredDocsForRequest(requestType, configuredRequiredDocs, npc);
+    const requiresInsuranceProof = requiredDocsForRequest.includes('insuranceProof');
 
     // Check flags
     if (npc.hasFlag('UNPAID_TICKETS')) {
@@ -461,7 +529,7 @@ export class CaseGenerator {
         type: 'unpaid_tickets',
         severity: flag.severity,
         detail: `${flag.data.count || 1} unpaid ticket(s), $${flag.data.amountDue || 0} owed`,
-        blocksApproval: flag.data.count >= 3
+        blocksApproval: true
       });
     }
 
@@ -474,12 +542,12 @@ export class CaseGenerator {
       });
     }
 
-    if (npc.hasFlag('INSURANCE_LAPSE')) {
+    if (npc.hasFlag('INSURANCE_LAPSE') && requiresInsuranceProof) {
       conditions.push({
         type: 'insurance_lapse',
         severity: 'med',
         detail: 'Insurance coverage has lapsed',
-        blocksApproval: ['VehicleRegistration', 'PlateRenewal'].includes(requestType)
+        blocksApproval: true
       });
     }
 
@@ -547,72 +615,108 @@ export class CaseGenerator {
     return conditions;
   }
 
-  determineCorrectAction(documents, npc, conditions, requestType) {
-        if (requestType === 'NameChange') {
-          const nameChangeValidationError = this.validateNameChangeDocuments(documents);
-          if (nameChangeValidationError) {
-            return {
-              action: 'Deny',
-              reasonCode: 'FailedVerification',
-              explanation: nameChangeValidationError
-            };
-          }
-        }
+  reconcileInsuranceLapseCondition(conditions, documents, shiftNumber) {
+    const activeConditions = Array.isArray(conditions) ? [...conditions] : [];
+    const lapseIndex = activeConditions.findIndex((condition) => condition?.type === 'insurance_lapse');
+    if (lapseIndex < 0) return activeConditions;
 
-    // Check for blocking conditions
-    const blockingConditions = conditions.filter(c => c.blocksApproval);
-    if (blockingConditions.length > 0) {
-      return {
-        action: 'Deny',
-        reasonCode: this.getBlockingReasonCode(blockingConditions[0]),
-        explanation: blockingConditions[0].detail
-      };
+    const insuranceDoc = documents?.insuranceProof;
+    if (!insuranceDoc?.present || insuranceDoc?.forged || insuranceDoc?.expired) {
+      return activeConditions;
+    }
+
+    const currentDate = this.getInGameDateForShift(shiftNumber);
+    const expirationDate = this.parseIsoDate(insuranceDoc?.data?.expirationDate);
+
+    // If proof is present and not expired (or expiration is after current in-game date),
+    // treat the lapse flag as cleared for this transaction.
+    if (!expirationDate || !currentDate || expirationDate.getTime() >= currentDate.getTime()) {
+      activeConditions.splice(lapseIndex, 1);
+    }
+
+    return activeConditions;
+  }
+
+  determineCorrectAction(documents, npc, conditions, requestType) {
+    const denyCandidates = [];
+
+    if (requestType === 'NameChange') {
+      const nameChangeValidationError = this.validateNameChangeDocuments(documents);
+      if (nameChangeValidationError) {
+        denyCandidates.push({
+          reasonCode: 'FailedVerification',
+          explanation: nameChangeValidationError
+        });
+      }
+    }
+
+    const blockingConditions = conditions.filter((c) => c.blocksApproval);
+    for (const condition of blockingConditions) {
+      denyCandidates.push({
+        reasonCode: this.getBlockingReasonCode(condition),
+        explanation: condition?.detail || 'Blocking condition on record'
+      });
     }
 
     // Check for missing documents
     const missingDocs = Object.values(documents).filter(d => !d.present);
     if (missingDocs.length > 0) {
-      return {
-        action: 'Deny',
+      denyCandidates.push({
         reasonCode: 'MissingDocument',
         explanation: `Missing: ${missingDocs.map(d => this.formatDocName(d.type)).join(', ')}`
-      };
+      });
     }
 
     // Check for missing critical fields on present docs (for example VIN on transfer records).
     const docFieldIssues = this.findCriticalFieldIssues(documents);
     if (docFieldIssues.length > 0) {
       const firstIssue = docFieldIssues[0];
-      return {
-        action: 'Deny',
+      denyCandidates.push({
         reasonCode: 'FailedVerification',
         explanation: `${this.formatDocName(firstIssue.docType)} missing required field: ${firstIssue.fieldLabel}`
-      };
+      });
+    }
+
+    const transferTimelineError = this.getTransferTimelineError(documents);
+    if (transferTimelineError) {
+      denyCandidates.push({
+        reasonCode: 'FailedVerification',
+        explanation: transferTimelineError
+      });
     }
 
     // Check for expired documents
     const expiredDocs = Object.values(documents).filter(d => d.expired && !this.isNonExpiringDocument(d.type));
     if (expiredDocs.length > 0) {
-      return {
-        action: 'Deny',
+      denyCandidates.push({
         reasonCode: 'ExpiredDocument',
         explanation: `Expired: ${expiredDocs.map(d => this.formatDocName(d.type)).join(', ')}`
-      };
+      });
     }
 
     // Check for forged documents
     const forgedDocs = Object.values(documents).filter(d => d.forged);
     if (forgedDocs.length > 0) {
-      return {
-        action: 'Deny',
+      denyCandidates.push({
         reasonCode: 'FraudSuspected',
         explanation: 'Document authenticity could not be verified'
+      });
+    }
+
+    const primaryDeny = this.pickPrimaryDenyCandidate(denyCandidates);
+    if (primaryDeny) {
+      const applicableReasonCodes = this.getApplicableDenyReasonCodes(denyCandidates);
+      return {
+        action: 'Deny',
+        reasonCode: primaryDeny.reasonCode,
+        explanation: this.buildDenyExplanation(primaryDeny, denyCandidates),
+        applicableReasonCodes
       };
     }
 
     // Check for high-severity flags that don't block but warrant escalation
     const highFlags = npc.flags.filter(f => f.severity === 'high');
-    if (highFlags.length > 0 && !blockingConditions.length) {
+    if (highFlags.length > 0) {
       return {
         action: 'Approve',
         reasonCode: 'AllDocumentsValid',
@@ -629,13 +733,75 @@ export class CaseGenerator {
     };
   }
 
+  getDenyReasonPriority(reasonCode) {
+    const priorityOrder = {
+      MissingDocument: 0,
+      ExpiredDocument: 1,
+      WrongForm: 2,
+      FailedVerification: 3,
+      SuspendedLicense: 4,
+      ImpoundHold: 5,
+      OutstandingViolations: 6,
+      InsuranceLapse: 7,
+      FraudSuspected: 8
+    };
+
+    return Object.prototype.hasOwnProperty.call(priorityOrder, reasonCode)
+      ? priorityOrder[reasonCode]
+      : Number.MAX_SAFE_INTEGER;
+  }
+
+  pickPrimaryDenyCandidate(candidates = []) {
+    if (!Array.isArray(candidates) || candidates.length === 0) return null;
+
+    return candidates.reduce((best, candidate) => {
+      if (!candidate?.reasonCode) return best;
+      if (!best) return candidate;
+      const candidatePriority = this.getDenyReasonPriority(candidate.reasonCode);
+      const bestPriority = this.getDenyReasonPriority(best.reasonCode);
+      if (candidatePriority < bestPriority) return candidate;
+      return best;
+    }, null);
+  }
+
+  getApplicableDenyReasonCodes(candidates = []) {
+    if (!Array.isArray(candidates) || candidates.length === 0) return [];
+
+    const uniqueCodes = [...new Set(
+      candidates
+        .map((candidate) => String(candidate?.reasonCode || '').trim())
+        .filter(Boolean)
+    )];
+
+    return uniqueCodes.sort((a, b) => {
+      const rankA = this.getDenyReasonPriority(a);
+      const rankB = this.getDenyReasonPriority(b);
+      if (rankA !== rankB) return rankA - rankB;
+      return a.localeCompare(b);
+    });
+  }
+
+  buildDenyExplanation(primaryCandidate, allCandidates = []) {
+    const primary = primaryCandidate?.explanation || 'Request cannot be approved';
+    const additional = allCandidates
+      .filter((candidate) => candidate && candidate !== primaryCandidate)
+      .map((candidate) => candidate.explanation)
+      .filter((text) => text && text !== primary);
+
+    if (!additional.length) {
+      return primary;
+    }
+
+    return `${primary} (Also: ${[...new Set(additional)].slice(0, 2).join('; ')})`;
+  }
+
   getBlockingReasonCode(condition) {
     const map = {
       'unpaid_tickets': 'OutstandingViolations',
       'suspended_license': 'SuspendedLicense',
       'insurance_lapse': 'InsuranceLapse',
       'impound_hold': 'ImpoundHold',
-      'wrong_form': 'FailedVerification',
+      'wrong_form': 'WrongForm',
       'vision_test': 'SupervisorRequired',
       'fraud_alert': 'FraudSuspected'
     };
@@ -659,7 +825,13 @@ export class CaseGenerator {
         issues.push({ type: 'inconsistency', doc: docType, severity: 'medium', description: `Address on ${this.formatDocName(docType)} doesn't match records` });
       }
       if (doc.errors.includes('name_mismatch')) {
-        issues.push({ type: 'mismatch', doc: docType, severity: 'high', description: `Name on ${this.formatDocName(docType)} doesn't match` });
+        const normalizeName = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const docHolderName = normalizeName(doc?.data?.holderName);
+        const npcFullName = normalizeName(`${npc?.identity?.firstName || ''} ${npc?.identity?.lastName || ''}`);
+
+        if (!docHolderName || !npcFullName || docHolderName !== npcFullName) {
+          issues.push({ type: 'mismatch', doc: docType, severity: 'high', description: `Name on ${this.formatDocName(docType)} doesn't match` });
+        }
       }
 
       const missingFields = this.getMissingCriticalFields(docType, doc?.data || {});
@@ -690,7 +862,61 @@ export class CaseGenerator {
       }
     }
 
+    const transferTimelineError = this.getTransferTimelineError(documents);
+    if (transferTimelineError) {
+      issues.push({
+        type: 'timeline_validation',
+        severity: 'high',
+        description: transferTimelineError
+      });
+    }
+
     return issues;
+  }
+
+  getTransferTimelineError(documents) {
+    const billDoc = documents?.billOfSale;
+    const odoDoc = documents?.odometerDisclosure;
+    const titleDoc = documents?.titleDocument;
+
+    if (!billDoc?.present || !odoDoc?.present) {
+      return null;
+    }
+
+    const saleDate = this.parseIsoDate(billDoc?.data?.saleDate);
+    const disclosureDate = this.parseIsoDate(odoDoc?.data?.disclosureDate);
+
+    if (!saleDate || !disclosureDate) {
+      return null;
+    }
+
+    const daysDiff = Math.round((disclosureDate.getTime() - saleDate.getTime()) / (24 * 60 * 60 * 1000));
+    if (Math.abs(daysDiff) > 30) {
+      return 'Transfer timeline inconsistent: odometer disclosure must occur at time of transfer (within 30 days of sale date)';
+    }
+
+    if (titleDoc?.present) {
+      const titleTransferDate = this.parseIsoDate(titleDoc?.data?.dateIssued);
+      if (titleTransferDate && disclosureDate.getTime() > titleTransferDate.getTime()) {
+        return 'Transfer timeline inconsistent: odometer disclosure occurs after title transfer filing date';
+      }
+    }
+
+    return null;
+  }
+
+  parseIsoDate(value) {
+    const text = String(value || '').trim();
+    if (!text) return null;
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  getInGameDateForShift(shiftNumber) {
+    const shift = Math.max(1, Number(shiftNumber || 1));
+    const baseDate = new Date('2026-01-05T08:00:00');
+    baseDate.setDate(baseDate.getDate() + shift - 1);
+    return new Date(baseDate.toISOString().slice(0, 10));
   }
 
   validateNameChangeDocuments(documents) {
@@ -796,7 +1022,12 @@ export class CaseGenerator {
   }
 
   isNonExpiringDocument(docType) {
-    return docType === 'birthCertificate' || docType === 'socialSecurityCard';
+    return [
+      'birthCertificate',
+      'socialSecurityCard',
+      'titleDocument',
+      'odometerDisclosure'
+    ].includes(docType);
   }
 
   formatRequestType(requestType) {

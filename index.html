@@ -63,6 +63,10 @@
         </div>
       </div>
       <div class="hud-right">
+        <div class="hud-item hud-overtime hidden" id="overtime-indicator" aria-live="polite">
+          <span class="label">Status</span>
+          <span class="value">Overtime</span>
+        </div>
         <div class="hud-item">
           <span class="label">Money</span>
           <span class="value" id="money-display">$0</span>
@@ -129,6 +133,13 @@
       <div>
         <div id="doc-request-content"></div>
         <div id="doc-request-actions" class="doc-request-actions"></div>
+      </div>
+    </div>
+
+    <!-- Parking Fine Payment Mini-Game Overlay -->
+    <div id="fine-payment-overlay" class="hidden">
+      <div>
+        <div id="fine-payment-content"></div>
       </div>
     </div>
 

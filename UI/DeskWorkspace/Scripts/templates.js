@@ -13,13 +13,13 @@ const formatCurrency = (value) => {
   return `$${numericValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-const normalizeSyntheticSsnLabel = (value, fallback = 'XXX-XX-X0000') => {
+const normalizeSyntheticSsnLabel = (value, fallback = 'XXX-XX-X000') => {
   const cleaned = String(value || fallback).toUpperCase().replace(/[^A-Z0-9]/g, '');
   const digits = cleaned.replace(/[A-Z]/g, '');
   const letters = cleaned.replace(/[0-9]/g, '');
-  const paddedDigits = `${digits}000000000`.slice(0, 9);
+  const paddedDigits = `${digits}00000000`.slice(0, 8);
   const marker = letters[0] || 'X';
-  return `${paddedDigits.slice(0, 3)}-${paddedDigits.slice(3, 5)}-${marker}${paddedDigits.slice(5, 9)}`;
+  return `${paddedDigits.slice(0, 3)}-${paddedDigits.slice(3, 5)}-${marker}${paddedDigits.slice(5, 8)}`;
 };
 
 const atlasMarkup = (asset, className, alt = 'Photo') => {
@@ -435,7 +435,7 @@ export const DeskDocumentTemplates = {
 
   socialSecurityCard: ({ person, documentData = {} }) => {
     const holderName = fallbackValue(person.name, 'Card holder on file');
-    const maskedSsn = normalizeSyntheticSsnLabel(documentData.ssn || person.ssn || 'XXX-XX-X0000');
+    const maskedSsn = normalizeSyntheticSsnLabel(documentData.ssn || person.ssn || 'XXX-XX-X000');
     const issueCode = `SSA-${DateFormatters.usShort(documentData.issueDate || new Date()).replace(/\//g, '')}`;
 
     return `
@@ -738,21 +738,41 @@ export const DeskDocumentTemplates = {
     const weightLabel = Number.isFinite(weightLbs) && weightLbs > 0
       ? `${weightLbs} lb`
       : fallbackValue(documentData.weight, '165 lb');
-    const ssnLabel = normalizeSyntheticSsnLabel(documentData.ssn || person.ssn || 'XXX-XX-X0000');
+    const ssnLabel = normalizeSyntheticSsnLabel(documentData.ssn || person.ssn || 'XXX-XX-X000');
     const expLabel = DateFormatters.monthName(dateValue || policy.expDate);
     const categoryLabel = fallbackValue(documentData.category, 'C');
     const restrictionsLabel = fallbackValue(documentData.restrictions, 'None');
     const ertcLabel = fallbackValue(documentData.ertc, 'E0-00-R0-00-T0-00');
+    const showForgeryHint = Boolean(documentData.showForgeryHint);
+    const forged = Boolean(documentData.forged);
+    const hintErrors = Array.isArray(documentData.errors) ? documentData.errors : [];
+    const showTamperHints = showForgeryHint && forged;
+    const hasError = (key) => showTamperHints && hintErrors.includes(key);
+    const fieldSmudge = (key) => hasError(key) ? '<span class="license-field-smudge" aria-hidden="true"></span>' : '';
+    const titleText = hasError('wrong_font') ? 'DRIVRE LICESNSE' : 'DRIVER LICENSE';
+    const cardClasses = [
+      'doc-detail',
+      'workspace-license-card',
+      'with-background-art',
+      hasError('photo_mismatch') ? 'forgery-photo-peel' : '',
+      hasError('ink_inconsistency') ? 'forgery-ink-smudge' : '',
+      hasError('suspicious_seal') ? 'forgery-seal-missing' : '',
+      hasError('altered_date') ? 'forgery-date-scratch' : ''
+    ].filter(Boolean).join(' ');
+    const expValueClass = hasError('altered_date') ? 'license-value exp-overwritten' : 'license-value';
+    const tamperOverlay = hasError('ink_inconsistency')
+      ? '<span class="license-ink-smudge" aria-hidden="true"></span>'
+      : '';
 
     return `
-      <div class="doc-detail workspace-license-card with-background-art">
+      <div class="${cardClasses}">
         <div class="license-header-band">
           <div class="license-authority">STATE OF RED TAPE</div>
           <div class="license-class">CLASS ${categoryLabel}</div>
         </div>
 
         <div class="license-title-row">
-          <h4>DRIVER LICENSE</h4>
+          <h4>${titleText}</h4>
           <span class="license-id-number">${normalizedLicenseId}</span>
         </div>
 
@@ -762,17 +782,19 @@ export const DeskDocumentTemplates = {
           </div>
 
           <div class="license-fields-block">
-            <div class="license-line"><span class="license-key">NAME</span><span class="license-value">${fullName}</span></div>
+            <div class="license-line"><span class="license-key">NAME</span><span class="license-value${hasError('name_mismatch') ? ' tampered-field' : ''}">${fullName}${fieldSmudge('name_mismatch')}</span></div>
             <div class="license-line"><span class="license-key">DOB</span><span class="license-value">${dobLabel}</span></div>
-            <div class="license-line"><span class="license-key">ADDRESS</span><span class="license-value">${addressLabel}</span></div>
+            <div class="license-line"><span class="license-key">ADDRESS</span><span class="license-value${hasError('wrong_address') ? ' tampered-field' : ''}">${addressLabel}${fieldSmudge('wrong_address')}</span></div>
             <div class="license-line split"><span><span class="license-key">SEX</span><span class="license-value">${sexLabel}</span></span><span><span class="license-key">EYES</span><span class="license-value">${eyeLabel}</span></span></div>
-            <div class="license-line split"><span><span class="license-key">HAIR</span><span class="license-value">${hairLabel}</span></span><span><span class="license-key">DONOR</span><span class="license-value">${donorLabel}</span></span></div>
+            <div class="license-line split"><span><span class="license-key">HAIR</span><span class="license-value${hasError('physical_mismatch') ? ' tampered-field' : ''}">${hairLabel}${fieldSmudge('physical_mismatch')}</span></span><span><span class="license-key">DONOR</span><span class="license-value">${donorLabel}</span></span></div>
             <div class="license-line split"><span><span class="license-key">HGT</span><span class="license-value">${heightLabel}</span></span><span><span class="license-key">WGT</span><span class="license-value">${weightLabel}</span></span></div>
             <div class="license-line"><span class="license-key">SSN</span><span class="license-value">${ssnLabel}</span></div>
             <div class="license-line split"><span><span class="license-key">RSTR</span><span class="license-value">${restrictionsLabel}</span></span><span><span class="license-key">ERTC</span><span class="license-value">${ertcLabel}</span></span></div>
-            <div class="license-line split"><span><span class="license-key">ISS</span><span class="license-value">STATE DMV</span></span><span><span class="license-key">EXP</span><span class="license-value">${expLabel}</span></span></div>
+            <div class="license-line split"><span><span class="license-key">ISS</span><span class="license-value">STATE DMV</span></span><span><span class="license-key">EXP</span><span class="${expValueClass}">${expLabel}${fieldSmudge('altered_date')}</span></span></div>
           </div>
         </div>
+
+        ${tamperOverlay}
 
         <div class="license-footer">
           <div class="license-signature">

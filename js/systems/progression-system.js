@@ -321,8 +321,11 @@ export function evaluateShiftForProgression(state, input = {}) {
   const meetsBribeRequirement = !context.rank.requireBribeHandled || normalized.bribeHandledAtRank;
   const meetsMisconductRequirement = !hasMisconduct;
 
-  const isSuccessfulShift = meetsThreshold && meetsAccuracy && meetsMisconductRequirement;
-  if (isSuccessfulShift) {
+  // Count qualifying shifts from performance targets so rank progress is visible
+  // even while promotion gates (for example open misconduct) are temporarily blocking promotion.
+  const isQualifyingShift = meetsThreshold && meetsAccuracy;
+  const isSuccessfulShift = isQualifyingShift && meetsMisconductRequirement;
+  if (isQualifyingShift) {
     normalized.successfulShiftsAtRank += 1;
   }
 
@@ -392,6 +395,7 @@ export function evaluateShiftForProgression(state, input = {}) {
     throughput,
     customer,
     integrity,
+    isQualifyingShift,
     isSuccessfulShift,
     meetsThreshold,
     meetsAccuracy,

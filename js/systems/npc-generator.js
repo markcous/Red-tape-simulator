@@ -78,7 +78,7 @@ export class NPCGenerator {
     const lastName = rng.pick(this.catalogs.names.last);
     const ssnArea = rng.nextInt(100, 899);
     const ssnGroup = rng.nextInt(10, 99);
-    const ssnSerial = rng.nextInt(1000, 9999);
+    const ssnSerial = rng.nextInt(100, 999);
     const ssnMarker = rng.pick(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']);
     const ssn = `${ssnArea}-${ssnGroup}-${ssnMarker}${ssnSerial}`;
     const address = rng.pick(this.catalogs.addresses);
@@ -101,7 +101,7 @@ export class NPCGenerator {
       eyeColor,
       organDonor,
       ssn,
-      ssnMasked: `XXX-XX-${ssnMarker}${String(ssnSerial).padStart(4, '0')}`,
+      ssnMasked: `XXX-XX-${ssnMarker}${String(ssnSerial).padStart(3, '0')}`,
       address,
       phone,
       email

@@ -29,7 +29,7 @@ export class SupervisorSystem {
     return this.rng.pick(names[this.type] || names.byTheBook);
   }
 
-  evaluateCase(caseResult, playerDecision, correctAction) {
+  evaluateCase(caseResult, playerDecision, correctAction, options = {}) {
     const evaluation = {
       correct: false,
       policyError: null,
@@ -39,10 +39,33 @@ export class SupervisorSystem {
       reputationDelta: { towardPlayer: 0, towardAgency: 0 }
     };
 
+    const difficultyId = String(options?.difficultyId || 'easy').toLowerCase();
+    const requiresAllDenyReasons = ['hard', 'nightmare'].includes(difficultyId);
+
     const isActionMatch = playerDecision.action === correctAction.action;
+    const expectedReasonSet = new Set(
+      (Array.isArray(correctAction?.applicableReasonCodes) && correctAction.applicableReasonCodes.length
+        ? correctAction.applicableReasonCodes
+        : [correctAction?.reasonCode]
+      )
+        .map((code) => String(code || '').trim())
+        .filter(Boolean)
+    );
+    const selectedReasonSet = new Set(
+      (Array.isArray(playerDecision?.reasonCodes) && playerDecision.reasonCodes.length
+        ? playerDecision.reasonCodes
+        : [playerDecision?.reasonCode]
+      )
+        .map((code) => String(code || '').trim())
+        .filter(Boolean)
+    );
+
+    const hasMatchingReasonSets = expectedReasonSet.size === selectedReasonSet.size
+      && [...expectedReasonSet].every((code) => selectedReasonSet.has(code));
+    const hasAnyExpectedReasonSelected = [...selectedReasonSet].some((code) => expectedReasonSet.has(code));
     const isDenyReasonMatch = !isActionMatch
       || playerDecision.action !== 'Deny'
-      || playerDecision.reasonCode === correctAction.reasonCode;
+      || (requiresAllDenyReasons ? hasMatchingReasonSets : hasAnyExpectedReasonSelected);
     const isCorrect = isActionMatch && isDenyReasonMatch;
     evaluation.correct = isCorrect;
 
@@ -69,7 +92,17 @@ export class SupervisorSystem {
         evaluation.policyError = 'minor';
         evaluation.sentiment = 'annoyed';
         evaluation.reputationDelta = { ...this.balancing.reputation.escalate };
-        evaluation.feedback = `Wrong deny reason. Expected ${correctAction.reasonCode}: ${correctAction.explanation}`;
+        if (requiresAllDenyReasons) {
+          const missingReasons = [...expectedReasonSet].filter((code) => !selectedReasonSet.has(code));
+          const extraReasons = [...selectedReasonSet].filter((code) => !expectedReasonSet.has(code));
+          const notes = [];
+          if (missingReasons.length) notes.push(`missing: ${missingReasons.join(', ')}`);
+          if (extraReasons.length) notes.push(`extra: ${extraReasons.join(', ')}`);
+          evaluation.feedback = `Wrong deny reason set for hard+ (${notes.join(' | ')}). Expected ${[...expectedReasonSet].join(', ')}: ${correctAction.explanation}`;
+        } else {
+          const acceptableReasons = [...expectedReasonSet].join(', ');
+          evaluation.feedback = `Wrong deny reason. Acceptable reason(s): ${acceptableReasons}. ${correctAction.explanation}`;
+        }
       } else if (playerDecision.action === 'Approve' && correctAction.action === 'Deny') {
         // Approved something that should've been denied - major error
         evaluation.policyError = 'major';
@@ -94,9 +127,13 @@ export class SupervisorSystem {
     return evaluation;
   }
 
-  generateShiftReview(player) {
+  generateShiftReview(player, options = {}) {
     const perf = player.performance.currentShift;
-    const score = player.calculateShiftScore(this.balancing);
+    const hasForcedScoreOption = options?.forcedScore !== null && options?.forcedScore !== undefined;
+    const forcedScore = hasForcedScoreOption ? Number(options.forcedScore) : NaN;
+    const score = Number.isFinite(forcedScore)
+      ? Math.max(0, Math.min(100, Math.round(forcedScore)))
+      : player.calculateShiftScore(this.balancing);
     const comments = this.dialogueData.supervisorComments[this.type];
 
     const review = {
@@ -114,9 +151,15 @@ export class SupervisorSystem {
     if (score >= 85) {
       review.comment = this.rng.pick(comments.praise);
     } else {
+      const latestCaseEvent = Array.isArray(perf?.events)
+        ? [...perf.events].reverse().find((event) => event?.caseId)
+        : null;
+      const resolvedCaseId = String(latestCaseEvent?.caseId || 'N/A');
       review.comment = this.rng.pick(comments.criticism)
         .replace('{{errorCount}}', perf.policyErrors.minor + perf.policyErrors.major)
-        .replace('{{complaintCount}}', perf.complaints);
+        .replace('{{complaintCount}}', perf.complaints)
+        .replace('{{caseId}}', resolvedCaseId)
+        .replace(/\{\{[^}]+\}\}/g, 'N/A');
     }
 
     // Detailed feedback
