@@ -4089,6 +4089,27 @@ body.high-contrast {
   color: #b7ddff;
 }
 
+.case-finding-evidence {
+  margin-top: 4px;
+  color: #d7e6f7;
+}
+
+.case-finding-evidence span {
+  font-size: 0.68rem;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.case-finding-evidence ul {
+  margin: 3px 0 0;
+  padding-left: 16px;
+}
+
+.case-finding-evidence li {
+  margin: 1px 0;
+  font-size: 0.71rem;
+}
+
 /* Decision panel */
 #decision-panel {
   padding: 16px;

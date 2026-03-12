@@ -329,6 +329,7 @@ export class UIRenderer {
       decisionPanel: document.getElementById('decision-panel'),
       approveBtn: document.getElementById('approve-btn'),
       denyBtn: document.getElementById('deny-btn'),
+      payFineBtn: document.getElementById('pay-fine-btn'),
       escalateBtn: document.getElementById('escalate-btn'),
       denyReasons: document.getElementById('deny-reasons'),
 
@@ -425,6 +426,15 @@ export class UIRenderer {
     this.elements.nextCustomerBtn?.addEventListener('click', () => {
       this.hideOverlay();
       this.game.nextCustomer();
+    });
+    this.elements.payFineBtn?.addEventListener('click', () => {
+      const response = this.game.launchMiniGame?.('parking_fine_payment', {
+        forceDevelopmentLaunch: this.game.developmentMode
+      }) || { ok: false, message: 'Mini-game launch is unavailable.' };
+
+      if (!response.ok && response.message) {
+        this.showNotification(response.message, 'warning');
+      }
     });
     this.elements.acceptBribeBtn?.addEventListener('click', () => {
       this.hideBribeOverlay();
@@ -3584,12 +3594,41 @@ export class UIRenderer {
       : (Array.isArray(this.game.currentCase?.possibleIssues) ? this.game.currentCase.possibleIssues : []);
     const expected = this.game.currentCase?.correctAction || null;
 
+    const detailLabelMap = {
+      name_mismatch: 'Name does not match records',
+      photo_mismatch: 'Photo does not match applicant',
+      altered_date: 'Date appears altered',
+      wrong_address: 'Address does not match records',
+      physical_mismatch: 'Physical descriptors differ from records',
+      suspicious_seal: 'Official seal appears tampered',
+      ink_inconsistency: 'Ink color/quality appears inconsistent',
+      wrong_font: 'Typography does not match official form'
+    };
+
+    const formatIssueDetail = (detail) => {
+      const key = String(detail || '').trim();
+      if (!key) return '';
+      if (detailLabelMap[key]) return detailLabelMap[key];
+      return key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+    };
+
     const issueRows = activeIssues.length
       ? activeIssues.map((issue) => {
         const severity = String(issue?.severity || 'info').toLowerCase();
         const docLabel = issue?.doc ? ` (${this.game.caseGenerator.formatDocName(issue.doc)})` : '';
         const text = issue?.description || issue?.type || 'Issue detected';
-        return `<li class="case-finding-item severity-${severity}"><strong>${severity.toUpperCase()}</strong> ${text}${docLabel}</li>`;
+        const detailItems = Array.isArray(issue?.details)
+          ? issue.details
+              .map((detail) => formatIssueDetail(detail))
+              .filter(Boolean)
+              .map((detailText) => `<li>${detailText}</li>`)
+              .join('')
+          : '';
+        const detailsMarkup = detailItems
+          ? `<div class="case-finding-evidence"><span>Evidence:</span><ul>${detailItems}</ul></div>`
+          : '';
+
+        return `<li class="case-finding-item severity-${severity}"><strong>${severity.toUpperCase()}</strong> ${text}${docLabel}${detailsMarkup}</li>`;
       }).join('')
       : '<li class="case-finding-item severity-info">No detected issues in current case.</li>';
 
@@ -3610,6 +3649,18 @@ export class UIRenderer {
     if (this.elements.escalateBtn) {
       this.elements.escalateBtn.style.display = 'none';
       this.elements.escalateBtn.disabled = true;
+    }
+
+    if (this.elements.payFineBtn) {
+      const launchers = this.game.getMiniGameLaunchers?.() || [];
+      const parkingLauncher = launchers.find((entry) => entry.id === 'parking_fine_payment');
+      const launchable = Boolean(parkingLauncher?.isLaunchable);
+
+      this.elements.payFineBtn.style.display = launchable ? '' : 'none';
+      this.elements.payFineBtn.disabled = !launchable;
+      this.elements.payFineBtn.title = launchable
+        ? 'Collect payment for outstanding parking fines.'
+        : (parkingLauncher?.unavailableMessage || 'No payable parking fine for this customer.');
     }
 
     if (this.elements.denyBtn) {
@@ -3919,6 +3970,11 @@ export class UIRenderer {
       const debugExplanationHtml = data.correctAction && revealExpectedDecision && revealExplanations
         ? `<p class="result-dev-explainer">${data.correctAction.explanation}</p>`
         : '';
+      const resultReportActionsHtml = `
+        <div class="dev-report-actions">
+          <button type="button" class="btn btn-sm dev-report-btn" data-dev-report-result="true">Report Logic Issue</button>
+        </div>
+      `;
 
       this.elements.resultContent.innerHTML = `
         <div class="result-dialog-split ${resultClass}">
@@ -3936,6 +3992,7 @@ export class UIRenderer {
               <p><strong>Processing Time:</strong> ${data.processingTime}s</p>
               <p><strong>Queue:</strong> ${data.queueStatus.served}/${data.queueStatus.total}</p>
             </div>
+            ${resultReportActionsHtml}
             ${scenarioSummaryHtml}
           </aside>
           <section class="result-player-panel">
@@ -3944,6 +4001,25 @@ export class UIRenderer {
           </section>
         </div>
       `;
+
+      const reportBtn = this.elements.resultContent.querySelector('[data-dev-report-result="true"]');
+      reportBtn?.addEventListener('click', () => {
+        this.reportLogicIssue({
+          source: 'customer_result_overlay',
+          promptText: 'Describe why this customer outcome or expected logic is wrong.',
+          extra: {
+            evaluation: data.evaluation || null,
+            reaction: data.reaction || '',
+            sentiment: data.sentiment || '',
+            bribeResult: data.bribeResult || null,
+            processingTime: data.processingTime || 0,
+            queueStatus: data.queueStatus || null,
+            selectedDecisionLabel,
+            expectedDecisionLabel,
+            scenarioSummary: data.scenarioSummary || null
+          }
+        });
+      });
     } else {
       this.elements.resultContent.innerHTML = playerFacingCardHtml;
     }

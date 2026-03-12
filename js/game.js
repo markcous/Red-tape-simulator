@@ -2320,7 +2320,8 @@ export class Game {
       return { minDocs: 0, maxDocs: 0 };
     }
 
-    const level = Math.max(1, Number(snapshot.rankIndex) + 1 || 1);
+    // Career snapshot rankIndex is already 1-based.
+    const level = Math.max(1, Number(snapshot.rankIndex) || 1);
     if (level === 1) {
       return { minDocs: 2, maxDocs: 2 };
     }
